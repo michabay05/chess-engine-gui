@@ -43,7 +43,7 @@ pub struct AttackInfo {
 
 impl AttackInfo {
     pub fn new() -> Self {
-        Self {
+        let mut this = Self {
             pawn: [[0; 64]; 2],
             knight: [0; 64],
             king: [0; 64],
@@ -51,10 +51,12 @@ impl AttackInfo {
             bishop_attack: [[0; 512]; 64],
             rook_occ_mask: [0; 64],
             rook_attack: [[0; 4096]; 64],
-        }
+        };
+        this.init();
+        this
     }
 
-    pub fn init(&mut self) {
+    fn init(&mut self) {
         gen_leapers(self);
         gen_sliding(self, PieceType::Bishop);
         gen_sliding(self, PieceType::Rook);

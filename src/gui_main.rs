@@ -1,9 +1,12 @@
 use raylib::prelude::*;
 
+use crate::attack::AttackInfo;
 use crate::bb::BBUtil;
 use crate::board::Board;
 use crate::consts::{Piece, Sq};
 use crate::fen::FEN_POSITIONS;
+use crate::moves::{self, Move, MoveFlag, MoveUtil};
+use crate::move_gen::{self, MoveList};
 use crate::{COL, ROW, SQ};
 
 const BACKGROUND: Color = Color::new(30, 30, 30, 255);
@@ -75,6 +78,16 @@ fn draw_pieces(d: &mut RaylibDrawHandle, tex: &Texture2D, board: &Board, sec: &R
     }
 }
 
+fn target_is_legal(board: &Board, attack_info: &AttackInfo, source: Sq, target: Sq) -> Option<Move> {
+    let mut ml = MoveList::new();
+    let piece = board.find_piece(source as usize);
+    assert!(piece.is_some());
+    move_gen::generate_by_piece(board, attack_info, &mut ml, piece.unwrap());
+    // TODO: handle the promotion piece
+    //                        vvvv 
+    ml.search(source, target, None)
+}
+
 pub fn gui_main() -> Result<(), String> {
     let (mut rl, thread) = raylib::init()
         .size(900, 600)
@@ -83,10 +96,13 @@ pub fn gui_main() -> Result<(), String> {
 
     rl.set_window_min_size(900, 600);
 
-    let board = Board::from_fen(FEN_POSITIONS[1]);
+    let mut board = Board::from_fen(FEN_POSITIONS[2]);
+    let attack_info = AttackInfo::new();
     let piece_tex = rl.load_texture(&thread, "assets/pieceSpriteSheet.png")?;
 
     let mut selected = None;
+    let mut target = None;
+    let mut curr_move = None;
     while !rl.window_should_close() {
         /* ========== UPDATE PHASE ========== */
         let size = Vector2::new(rl.get_screen_width() as f32, rl.get_screen_height() as f32);
@@ -104,11 +120,35 @@ pub fn gui_main() -> Result<(), String> {
             if boundary.check_collision_point_rec(mouse_pos) {
                 let col = ((mouse_pos.x - boundary.x) / (boundary.width / 8.0)) as usize;
                 let row = ((mouse_pos.y - boundary.y) / (boundary.height / 8.0)) as usize;
-                let piece = board.find_piece(SQ!(row, col));
-                selected = if piece.is_some() { Some(Sq::from_num(SQ!(row, col))) } else { None }
+                let sq = Sq::from_num(SQ!(row, col));
+                if selected.is_none() {
+                    if let Some(piece) = board.find_piece(SQ!(row, col)) {
+                        if (piece as usize / 6) == board.state.side as usize {
+                            selected = Some(sq);
+                        }
+                    } else {
+                        selected = None;
+                    }
+                } else {
+                    /* if let Some(piece) = board.find_piece(SQ!(row, col)) {
+                        if (piece as usize / 6) == board.state.side as usize {
+                            selected = Some(sq);
+                        }
+                    } */
+                    // target square selection
+                    curr_move = target_is_legal(&board, &attack_info, selected.unwrap(), sq);
+                    target = if curr_move.is_some() { Some(sq) } else { None };
+
+                    selected = None;
+                }
             } else {
                 selected = None;
             }
+        }
+
+        if let Some(mv) = curr_move {
+            let _ = moves::make(&mut board, &attack_info, mv, MoveFlag::AllMoves);
+            curr_move = None;
         }
 
         /* ========== RENDER PHASE ========== */

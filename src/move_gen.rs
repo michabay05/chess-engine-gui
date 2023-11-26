@@ -33,7 +33,18 @@ impl MoveList {
     }
 }
 
-pub fn generate(board: &Board, attack_info: &AttackInfo, ml: &mut MoveList) {
+pub fn generate_by_piece(board: &Board, attack_info: &AttackInfo, ml: &mut MoveList, piece: Piece) {
+    match piece {
+        Piece::LP | Piece::DP => generate_pawns(board, attack_info, ml),
+        Piece::LN | Piece::DN => generate_knights(board, attack_info, ml),
+        Piece::LB | Piece::DB => generate_bishops(board, attack_info, ml),
+        Piece::LR | Piece::DR => generate_rooks(board, attack_info, ml),
+        Piece::LQ | Piece::DQ => generate_queens(board, attack_info, ml),
+        Piece::LK | Piece::DK => generate_kings(board, attack_info, ml)
+    }
+}
+
+pub fn generate_all(board: &Board, attack_info: &AttackInfo, ml: &mut MoveList) {
     generate_pawns(board, attack_info, ml);
     generate_knights(board, attack_info, ml);
     generate_bishops(board, attack_info, ml);
