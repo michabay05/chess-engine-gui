@@ -2,28 +2,35 @@ use raylib::prelude::*;
 
 use crate::bb::BBUtil;
 use crate::board::Board;
-use crate::consts::Piece;
+use crate::consts::{Piece, Sq};
 use crate::fen::FEN_POSITIONS;
-use crate::SQ;
+use crate::{COL, ROW, SQ};
 
 const BACKGROUND: Color = Color::new(30, 30, 30, 255);
 
 const LIGHT_SQ_CLR: Color = Color::new(118, 150, 86, 255);
-const LIGHT_SELECTED_CLR: Color = Color::new(244, 246, 128, 255);
+const LIGHT_SELECTED_CLR: Color = Color::new(187, 204, 68, 255);
 const DARK_SQ_CLR: Color = Color::new(238, 238, 210, 255);
-const DARK_SELECTED_CLR: Color = Color::new(187, 204, 68, 255);
+const DARK_SELECTED_CLR: Color = Color::new(244, 246, 128, 255);
 
-fn draw_board(d: &mut RaylibDrawHandle, sec: &Rectangle) {
-    let min_side = f32::min(sec.width, sec.height);
+fn draw_board(d: &mut RaylibDrawHandle, sec: &Rectangle, selected: Option<Sq>) {
+    assert!(sec.width == sec.height);
     let mut cell_size = Vector2::one();
-    cell_size.scale(min_side / 8.0);
+    cell_size.scale(sec.width / 8.0);
 
     for r in 0..8 {
         for f in 0..8 {
-            let sq_clr = if (r + f) % 2 != 0 { LIGHT_SQ_CLR } else { DARK_SQ_CLR };
+            let mut sq_clr = if (r + f) % 2 != 0 { LIGHT_SQ_CLR } else { DARK_SQ_CLR };
+            if let Some(sq) = selected {
+                let sq = sq as usize;
+                if sq == SQ!(r, f) {
+                    sq_clr = if (ROW!(sq) + COL!(sq)) % 2 != 0 { LIGHT_SELECTED_CLR } else { DARK_SELECTED_CLR };
+                }
+            }
+
             d.draw_rectangle_v(
                 Vector2::new(
-                    (sec.width - min_side) / 2.0 + (sec.x + (f as f32) * cell_size.x),
+                    sec.x + (f as f32) * cell_size.x,
                     sec.y + (r as f32) * cell_size.y
                 ),
                 cell_size,
@@ -31,7 +38,7 @@ fn draw_board(d: &mut RaylibDrawHandle, sec: &Rectangle) {
             );
         }
     }
-    // d.draw_rectangle_lines_ex(sec, 2, Color::RED);
+    d.draw_rectangle_lines_ex(sec, 1, Color::RED);
 }
 
 fn draw_pieces(d: &mut RaylibDrawHandle, tex: &Texture2D, board: &Board, sec: &Rectangle) {
@@ -51,7 +58,7 @@ fn draw_pieces(d: &mut RaylibDrawHandle, tex: &Texture2D, board: &Board, sec: &R
                 (tex.height() / 2) as f32,
             );
             let target_rect = Rectangle::new(
-                (sec.width - min_side) / 2.0 + (sec.x + (f as f32) * cell_size.x),
+                sec.x + (f as f32) * cell_size.x,
                 sec.y + (r as f32) * cell_size.y,
                 cell_size.x,
                 cell_size.y
@@ -66,7 +73,6 @@ fn draw_pieces(d: &mut RaylibDrawHandle, tex: &Texture2D, board: &Board, sec: &R
             );
         }
     }
-    // d.draw_rectangle_lines_ex(sec, 2, Color::RED);
 }
 
 pub fn gui_main() -> Result<(), String> {
@@ -75,21 +81,40 @@ pub fn gui_main() -> Result<(), String> {
         .title("Chess Engine GUI")
         .build();
 
+    rl.set_window_min_size(900, 600);
+
     let board = Board::from_fen(FEN_POSITIONS[1]);
     let piece_tex = rl.load_texture(&thread, "assets/pieceSpriteSheet.png")?;
 
+    let mut selected = None;
     while !rl.window_should_close() {
+        /* ========== UPDATE PHASE ========== */
         let size = Vector2::new(rl.get_screen_width() as f32, rl.get_screen_height() as f32);
         let margin = Vector2::new(size.x * 0.01, size.y * 0.03);
-        let mut boundary = Rectangle {
+        let min_side = f32::min((size.x - 2.0*margin.x) * 0.7, size.y - 2.0*margin.y);
+        let boundary = Rectangle {
             x: margin.x,
             y: margin.y,
-            width: (size.x - 2.0*margin.x) * 0.7,
-            height: size.y - 2.0*margin.y
+            width: min_side,
+            height: min_side
         };
+
+        if rl.is_mouse_button_pressed(MouseButton::MOUSE_LEFT_BUTTON) {
+            let mouse_pos = rl.get_mouse_position();
+            if boundary.check_collision_point_rec(mouse_pos) {
+                let col = ((mouse_pos.x - boundary.x) / (boundary.width / 8.0)) as usize;
+                let row = ((mouse_pos.y - boundary.y) / (boundary.height / 8.0)) as usize;
+                let piece = board.find_piece(SQ!(row, col));
+                selected = if piece.is_some() { Some(Sq::from_num(SQ!(row, col))) } else { None }
+            } else {
+                selected = None;
+            }
+        }
+
+        /* ========== RENDER PHASE ========== */
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(BACKGROUND);
-        draw_board(&mut d, &boundary);
+        draw_board(&mut d, &boundary, selected);
         draw_pieces(&mut d, &piece_tex, &board, &boundary);
     }
 
