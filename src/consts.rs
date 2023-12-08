@@ -60,7 +60,7 @@ pub enum PieceType {
     King,
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Piece {
     LP,
     LN,
