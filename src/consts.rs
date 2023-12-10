@@ -1,3 +1,7 @@
+#![allow(dead_code)]
+
+use std::fmt;
+
 #[macro_export]
 macro_rules! SQ {
     ($row: expr, $col: expr) => {
@@ -9,21 +13,21 @@ macro_rules! SQ {
 #[macro_export]
 macro_rules! ROW {
     ($sq: expr) => {
-        $sq >> 3
+        ($sq >> 3)
     };
 }
 
 #[macro_export]
 macro_rules! COL {
     ($sq: expr) => {
-        $sq & 7
+        ($sq & 7)
     };
 }
 
 #[macro_export]
 macro_rules! FLIP_SQ {
     ($sq: expr) => {
-        $sq ^ 56
+        ($sq ^ 56)
     };
 }
 
@@ -139,10 +143,10 @@ impl Piece {
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone)]
 pub enum Direction {
-    NORTH = 8,
-    SOUTH = -8,
-    WEST = -1,
-    EAST = 1,
+    North = 8,
+    South = -8,
+    West = -1,
+    East = 1,
     NE = 9,     // NORTH + EAST
     NW = 7,     // NORTH + WEST
     SE = -7,    // SOUTH + EAST
@@ -171,11 +175,17 @@ pub enum Sq {
     NoSq,
 }
 
+impl fmt::Display for Sq {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Sq::to_string(*self))
+    }
+}
+
 impl Sq {
     pub fn from_str(sq_str: &str) -> Sq {
         assert!(sq_str.len() == 2);
-        let file = (sq_str.chars().nth(0).unwrap() as u8) - 'a' as u8;
-        let rank = 8 - (sq_str.chars().nth(1).unwrap() as u8 - '0' as u8);
+        let file = (sq_str.chars().nth(0).unwrap() as u8) - b'a';
+        let rank = 8 - (sq_str.chars().nth(1).unwrap() as u8 - b'0');
         Self::from_num(SQ!(rank, file) as usize)
     }
 

@@ -1,6 +1,7 @@
 mod attack;
 mod bb;
 mod board;
+mod comm;
 mod consts;
 mod fen;
 mod gui_main;
