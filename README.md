@@ -15,4 +15,4 @@ $ ./engine-gui <engine-1> [engine-2]
     - Used for window management and rendering
     - Rust binding for the [original C version of raylib](https://github.com/raysan5/raylib)
 - [`chess.com-boards-and-pieces` repo](https://github.com/GiorgioMegrelli/chess.com-boards-and-pieces)
-    - Got default chess.com pieces using this repo
+    - Got default [chess.com](https://www.chess.com/) pieces using this repo
