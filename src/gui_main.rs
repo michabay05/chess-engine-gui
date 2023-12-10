@@ -3,7 +3,6 @@ use raylib::prelude::*;
 use crate::attack::AttackInfo;
 use crate::bb::BBUtil;
 use crate::board::Board;
-use crate::comm::EngineComm;
 use crate::consts::{Piece, PieceColor, PieceType, Sq};
 use crate::fen::FEN_POSITIONS;
 use crate::moves::{self, Move, MoveFlag, MoveUtil};
@@ -85,20 +84,26 @@ fn target_is_legal(board: &Board, attack_info: &AttackInfo, source: Sq, target: 
     let piece = board.find_piece(source as usize);
     assert!(piece.is_some());
     move_gen::generate_by_piece(board, attack_info, &mut ml, piece.unwrap());
+    ml.print();
     ml.search(source, target, promoted)
 }
+
 
 fn handle_board_selected(
     rl: &RaylibHandle, board: &Board, board_sec: &Rectangle, selected: &mut Option<Sq>
 ) {
     if rl.is_mouse_button_pressed(MouseButton::MOUSE_LEFT_BUTTON) {
         let mouse_pos = rl.get_mouse_position();
+        // if selected.is_some() { return; }
         let mut temp_selected = None;
         if board_sec.check_collision_point_rec(mouse_pos) {
             let col = ((mouse_pos.x - board_sec.x) / (board_sec.width / 8.0)) as usize;
             let row = ((mouse_pos.y - board_sec.y) / (board_sec.height / 8.0)) as usize;
             temp_selected = Some(Sq::from_num(SQ!(row, col)));
         }
+        /* if let Some(sq) = temp_selected {
+            if board.find_piece(sq as usize).is_none() { return; }
+        } */
         let sq = temp_selected.unwrap();
         if let Some(piece) = board.find_piece(sq as usize) {
             if piece as usize / 6 != board.state.side as usize { return; }
@@ -110,6 +115,12 @@ fn handle_board_selected(
             return;
         }
         *selected = temp_selected;
+        /* if selected.is_some() {
+            println!("Source: {}", Sq::to_string(selected.unwrap()));
+        } else {
+            println!("Source: None");
+        } */
+        println!("Source: {}", Sq::to_string(selected.unwrap()));
     }
 }
 
@@ -129,6 +140,12 @@ fn handle_board_target(
         }
         if temp_selected == *selected { return; }
         *target = temp_selected;
+        /* if target.is_some() {
+            println!("Target: {}\n", Sq::to_string(target.unwrap()));
+        } else {
+            println!("Target: None");
+        } */
+        println!("Target: {}\n", Sq::to_string(target.unwrap()));
         let piece = board.find_piece(selected.unwrap() as usize);
         if piece.is_none() { return; }
         let piece = piece.unwrap();
@@ -137,6 +154,12 @@ fn handle_board_target(
             && (ROW!(sq as usize) == 0 || ROW!(sq as usize) == 7) {
             *is_promotion = true;
         }
+        /* if let Some(sq) = temp_selected {
+            if (piece == Piece::LP || piece == Piece::DP)
+                && (ROW!(sq as usize) == 0 || ROW!(sq as usize) == 7) {
+                *is_promotion = true;
+            }
+        } */
     }
 }
 
@@ -148,17 +171,8 @@ pub fn gui_main() -> Result<(), String> {
 
     rl.set_window_min_size(900, 600);
 
-    let engine_a_path = "engines/stockfish";
-    let engine_a = EngineComm::new(engine_a_path);
-    if engine_a.is_err() {
-        return Err(format!("'{}' couldn't be initialized!", engine_a_path));
-    }
-    let mut engine_a = engine_a.unwrap();
-
-    let fen = FEN_POSITIONS[2];
-    let mut board = Board::from_fen(fen);
-    engine_a.start_pos(fen);
-
+    // let mut board = Board::from_fen(FEN_POSITIONS[2]);
+    let mut board = Board::from_fen("8/3KP3/8/7b/B7/8/3pk3/8 w - - 0 1");
     let attack_info = AttackInfo::new();
     let piece_tex = rl.load_texture(&thread, "assets/pieceSpriteSheet.png")?;
     piece_tex.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
@@ -196,6 +210,7 @@ pub fn gui_main() -> Result<(), String> {
                 if board.state.side == PieceColor::Dark {
                     piece += 6;
                 }
+                // println!("piece = {piece}");
                 promoted_piece = match piece {
                      1 => Some(Piece::LN),
                      2 => Some(Piece::LB),
@@ -207,6 +222,7 @@ pub fn gui_main() -> Result<(), String> {
                     10 => Some(Piece::DQ),
                     _ => None
                 };
+                // println!("Promotion: {:?}", promoted_piece);
                 is_promotion = false;
             }
         }
@@ -214,7 +230,12 @@ pub fn gui_main() -> Result<(), String> {
         handle_board_target(&rl, &board, &boundary, &selected, &mut target, &mut is_promotion);
 
         if selected.is_some() && target.is_some() && !is_promotion {
+            println!("Going to make move, here's the info:");
+            println!("           Source: {}", Sq::to_string(selected.unwrap()));
+            println!("           Target: {}", Sq::to_string(target.unwrap()));
+            println!("  Promotion piece: {:?}", promoted_piece);
             let curr_move = target_is_legal(&board, &attack_info, selected.unwrap(), target.unwrap(), promoted_piece);
+            println!("\t = {}", curr_move.unwrap().to_str());
             if let Some(mv) = curr_move {
                 // Since the legality of the move has been checked, the return value isn't used
                 if !moves::make(&mut board, &attack_info, mv, MoveFlag::AllMoves) {

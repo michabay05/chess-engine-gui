@@ -178,16 +178,16 @@ fn gen_knight(attack_info: &mut AttackInfo, sq: usize) {
 fn gen_king(attack_info: &mut AttackInfo, sq: usize) {
     let bb = &mut attack_info.king[sq];
     if ROW!(sq) > 0 {
-        bb.set((sq as i32 + Direction::South as i32) as usize);
+        bb.set((sq as i32 + Direction::SOUTH as i32) as usize);
     }
     if ROW!(sq) < 7 {
-        bb.set((sq as i32 + Direction::North as i32) as usize);
+        bb.set((sq as i32 + Direction::NORTH as i32) as usize);
     }
     if COL!(sq) > 0 {
-        bb.set((sq as i32 + Direction::West as i32) as usize);
+        bb.set((sq as i32 + Direction::WEST as i32) as usize);
     }
     if COL!(sq) < 7 {
-        bb.set((sq as i32 + Direction::East as i32) as usize);
+        bb.set((sq as i32 + Direction::EAST as i32) as usize);
     }
     if ROW!(sq) > 0 && COL!(sq) > 0 {
         bb.set((sq as i32 + Direction::SW as i32) as usize);
