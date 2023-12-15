@@ -182,10 +182,10 @@ pub fn make(
             let direction;
             if main.state.side == PieceColor::Light {
                 pawn_type = Piece::DP;
-                direction = Direction::NORTH;
+                direction = Direction::North;
             } else {
                 pawn_type = Piece::LP;
-                direction = Direction::SOUTH;
+                direction = Direction::South;
             }
             main.pos.piece[pawn_type as usize].pop((target as i32 + direction as i32) as usize);
         }
@@ -194,10 +194,10 @@ pub fn make(
         if is_twosquare {
             if main.state.side == PieceColor::Light {
                 main.state.enpassant =
-                    Sq::from_num((target as i32 + Direction::NORTH as i32) as usize);
+                    Sq::from_num((target as i32 + Direction::North as i32) as usize);
             } else {
                 main.state.enpassant =
-                    Sq::from_num((target as i32 + Direction::SOUTH as i32) as usize);
+                    Sq::from_num((target as i32 + Direction::South as i32) as usize);
             }
         }
 

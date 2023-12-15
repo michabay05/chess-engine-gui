@@ -163,7 +163,7 @@ fn handle_board_target(
     }
 }
 
-pub fn gui_main() -> Result<(), String> {
+pub fn gui_main(engine_a: Option<String>, engine_b: Option<String>) -> Result<(), String> {
     let (mut rl, thread) = raylib::init()
         .size(900, 600)
         .title("Chess Engine GUI")
@@ -210,7 +210,6 @@ pub fn gui_main() -> Result<(), String> {
                 if board.state.side == PieceColor::Dark {
                     piece += 6;
                 }
-                // println!("piece = {piece}");
                 promoted_piece = match piece {
                      1 => Some(Piece::LN),
                      2 => Some(Piece::LB),
@@ -222,7 +221,6 @@ pub fn gui_main() -> Result<(), String> {
                     10 => Some(Piece::DQ),
                     _ => None
                 };
-                // println!("Promotion: {:?}", promoted_piece);
                 is_promotion = false;
             }
         }
@@ -230,10 +228,11 @@ pub fn gui_main() -> Result<(), String> {
         handle_board_target(&rl, &board, &boundary, &selected, &mut target, &mut is_promotion);
 
         if selected.is_some() && target.is_some() && !is_promotion {
-            println!("Going to make move, here's the info:");
-            println!("           Source: {}", Sq::to_string(selected.unwrap()));
-            println!("           Target: {}", Sq::to_string(target.unwrap()));
-            println!("  Promotion piece: {:?}", promoted_piece);
+            // DEBUG INFO
+            // println!("Going to make move, here's the info:");
+            // println!("           Source: {}", Sq::to_string(selected.unwrap()));
+            // println!("           Target: {}", Sq::to_string(target.unwrap()));
+            // println!("  Promotion piece: {:?}", promoted_piece);
             let curr_move = target_is_legal(&board, &attack_info, selected.unwrap(), target.unwrap(), promoted_piece);
             println!("\t = {}", curr_move.unwrap().to_str());
             if let Some(mv) = curr_move {
