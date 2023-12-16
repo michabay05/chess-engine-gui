@@ -4,7 +4,7 @@ use crate::attack::AttackInfo;
 use crate::bb::BBUtil;
 use crate::board::Board;
 use crate::consts::{Piece, PieceColor, PieceType, Sq};
-use crate::fen::FEN_POSITIONS;
+use crate::fen::{self, FEN_POSITIONS};
 use crate::moves::{self, Move, MoveFlag, MoveUtil};
 use crate::move_gen::{self, MoveList};
 use crate::{COL, ROW, SQ};
@@ -120,7 +120,7 @@ fn handle_board_selected(
         } else {
             println!("Source: None");
         } */
-        println!("Source: {}", Sq::to_string(selected.unwrap()));
+        // println!("Source: {}", Sq::to_string(selected.unwrap()));
     }
 }
 
@@ -145,7 +145,7 @@ fn handle_board_target(
         } else {
             println!("Target: None");
         } */
-        println!("Target: {}\n", Sq::to_string(target.unwrap()));
+        // println!("Target: {}\n", Sq::to_string(target.unwrap()));
         let piece = board.find_piece(selected.unwrap() as usize);
         if piece.is_none() { return; }
         let piece = piece.unwrap();
@@ -163,7 +163,10 @@ fn handle_board_target(
     }
 }
 
-pub fn gui_main(engine_a: Option<String>, engine_b: Option<String>) -> Result<(), String> {
+pub fn gui_main(engine_a: String, engine_b: Option<String>) -> Result<(), String> {
+    let mut board = Board::from_fen(FEN_POSITIONS[3]);
+    let attack_info = AttackInfo::new();
+
     let (mut rl, thread) = raylib::init()
         .size(900, 600)
         .title("Chess Engine GUI")
@@ -171,9 +174,6 @@ pub fn gui_main(engine_a: Option<String>, engine_b: Option<String>) -> Result<()
 
     rl.set_window_min_size(900, 600);
 
-    // let mut board = Board::from_fen(FEN_POSITIONS[2]);
-    let mut board = Board::from_fen("8/3KP3/8/7b/B7/8/3pk3/8 w - - 0 1");
-    let attack_info = AttackInfo::new();
     let piece_tex = rl.load_texture(&thread, "assets/pieceSpriteSheet.png")?;
     piece_tex.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
 
@@ -234,7 +234,7 @@ pub fn gui_main(engine_a: Option<String>, engine_b: Option<String>) -> Result<()
             // println!("           Target: {}", Sq::to_string(target.unwrap()));
             // println!("  Promotion piece: {:?}", promoted_piece);
             let curr_move = target_is_legal(&board, &attack_info, selected.unwrap(), target.unwrap(), promoted_piece);
-            println!("\t = {}", curr_move.unwrap().to_str());
+            // println!("\t = {}", curr_move.unwrap().to_str());
             if let Some(mv) = curr_move {
                 // Since the legality of the move has been checked, the return value isn't used
                 if !moves::make(&mut board, &attack_info, mv, MoveFlag::AllMoves) {

@@ -29,7 +29,7 @@ fn main() {
 
     if args.len() < 1 {
         usage(&program);
-        std::process::exit(0);
+        std::process::exit(1);
     }
 
     let engine_a = args.next();
@@ -51,7 +51,7 @@ fn main() {
          }
     }
 
-    if let Err(e) = gui_main::gui_main(engine_a, engine_b) {
+    if let Err(e) = gui_main::gui_main(engine_a.unwrap(), engine_b) {
         eprintln!("[ERROR] Something went wrong!");
         eprintln!("[ERROR] {e}");
     }
