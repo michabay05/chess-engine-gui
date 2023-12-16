@@ -1,6 +1,7 @@
-use crate::bb::BBUtil;
+use crate::bb::{BB, BBUtil};
 use crate::board::{Board, CastlingType, Position};
 use crate::consts::{Piece, PieceColor, Sq};
+use crate::SQ;
 
 pub const FEN_POSITIONS: [&str; 8] = [
     "8/8/8/8/8/8/8/8 w - - 0 1",
@@ -86,4 +87,73 @@ fn parse_pieces(fen_piece: &str, pos: &mut Position) {
             sq += 1;
         }
     }
+}
+
+pub fn gen_fen(board: &Board) -> String {
+    let mut output = String::new();
+
+    // Piece placements
+    for r in 0..8 {
+        let mut empty_sqs = 0;
+        for f in 0..8 {
+            if let Some(piece) = board.find_piece(SQ!(r, f)) {
+                if empty_sqs != 0 {
+                    output.push(char::from_digit(empty_sqs, 10).unwrap());
+                }
+                empty_sqs = 0;
+                output.push(Piece::to_char(Some(piece)));
+            } else {
+                empty_sqs += 1;
+            }
+        }
+        if empty_sqs != 0 {
+            output.push(char::from_digit(empty_sqs, 10).unwrap());
+        }
+        if r != 7 {
+            output.push('/');
+        }
+    }
+
+    output.push(' ');
+
+    // Side to move
+    if board.state.side == PieceColor::Light {
+        output.push('w');
+    } else {
+        output.push('b');
+    }
+
+    output.push(' ');
+
+    let castling = board.state.castling as BB;
+    if castling != 0 {
+        if castling.get(CastlingType::WhiteKingside as usize) {
+            output.push('K');
+        }
+        if castling.get(CastlingType::WhiteQueenside as usize) {
+            output.push('Q');
+        }
+        if castling.get(CastlingType::BlackKingside as usize) {
+            output.push('k');
+        }
+        if castling.get(CastlingType::BlackQueenside as usize) {
+            output.push('q');
+        }
+    } else {
+        output.push('-');
+    }
+
+    output.push(' ');
+
+    // Enpassant square
+    if board.state.enpassant != Sq::NoSq {
+        output.push_str(&Sq::to_string(board.state.enpassant));
+    } else {
+        output.push('-');
+    }
+
+    // Half move counter and full move counter
+    output.push_str(&format!(" {} {}", board.state.half_moves, board.state.full_moves));
+
+    output
 }
