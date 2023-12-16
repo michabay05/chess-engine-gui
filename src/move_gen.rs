@@ -52,14 +52,14 @@ pub fn generate_by_piece(board: &Board, attack_info: &AttackInfo, ml: &mut MoveL
     }
 }
 
-/* pub fn generate_all(board: &Board, attack_info: &AttackInfo, ml: &mut MoveList) {
+pub fn generate_all(board: &Board, attack_info: &AttackInfo, ml: &mut MoveList) {
     generate_pawns(board, attack_info, ml);
     generate_knights(board, attack_info, ml);
     generate_bishops(board, attack_info, ml);
     generate_rooks(board, attack_info, ml);
     generate_queens(board, attack_info, ml);
     generate_kings(board, attack_info, ml);
-} */
+}
 
 fn generate_pawns(board: &Board, attack_info: &AttackInfo, ml: &mut MoveList) {
     const PROMOTED_PIECE_LIST: [[Piece; 4]; 2] = [

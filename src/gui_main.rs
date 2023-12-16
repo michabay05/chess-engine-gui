@@ -3,6 +3,7 @@ use raylib::prelude::*;
 use crate::attack::AttackInfo;
 use crate::bb::BBUtil;
 use crate::board::Board;
+use crate::comm::EngineComm;
 use crate::consts::{Piece, PieceColor, PieceType, Sq};
 use crate::fen::{self, FEN_POSITIONS};
 use crate::moves::{self, Move, MoveFlag, MoveUtil};
@@ -79,12 +80,11 @@ fn draw_pieces(d: &mut RaylibDrawHandle, tex: &Texture2D, board: &Board, sec: &R
     }
 }
 
-fn target_is_legal(board: &Board, attack_info: &AttackInfo, source: Sq, target: Sq, promoted: Option<Piece>) -> Option<Move> {
+fn move_is_legal(board: &Board, attack_info: &AttackInfo, source: Sq, target: Sq, promoted: Option<Piece>) -> Option<Move> {
     let mut ml = MoveList::new();
     let piece = board.find_piece(source as usize);
     assert!(piece.is_some());
     move_gen::generate_by_piece(board, attack_info, &mut ml, piece.unwrap());
-    ml.print();
     ml.search(source, target, promoted)
 }
 
@@ -163,9 +163,115 @@ fn handle_board_target(
     }
 }
 
-pub fn gui_main(engine_a: String, engine_b: Option<String>) -> Result<(), String> {
-    let mut board = Board::from_fen(FEN_POSITIONS[3]);
+fn update_player(
+    rl: &RaylibHandle, board: &mut Board, attack_info: &AttackInfo,
+    boundary: &Rectangle, promoted_boundary: &Rectangle, selected: &mut Option<Sq>, target: &mut Option<Sq>,
+    is_promotion: &mut bool, promoted_piece: &mut Option<Piece>
+) {
+    if *is_promotion {
+        let mouse_pos = rl.get_mouse_position();
+        if rl.is_mouse_button_pressed(MouseButton::MOUSE_LEFT_BUTTON)
+        && promoted_boundary.check_collision_point_rec(mouse_pos) {
+            let mut piece = (mouse_pos.x / (promoted_boundary.width / 4.0)).trunc() as usize;
+            if board.state.side == PieceColor::Dark {
+                piece += 6;
+            }
+            *promoted_piece = match piece {
+                1 => Some(Piece::LN),
+                2 => Some(Piece::LB),
+                3 => Some(Piece::LR),
+                4 => Some(Piece::LQ),
+                7 => Some(Piece::DN),
+                8 => Some(Piece::DB),
+                9 => Some(Piece::DR),
+                10 => Some(Piece::DQ),
+                _ => None
+            };
+            *is_promotion = false;
+        }
+    }
+    handle_board_selected(rl, board, boundary, selected);
+    handle_board_target(rl, board, boundary, &selected, target, is_promotion);
+}
+
+
+fn update_engine(rl: &RaylibHandle, engine: &mut EngineComm, fen: &str,
+    selected: &mut Option<Sq>, target: &mut Option<Sq>, promoted_piece: &mut Option<Piece>
+) {
+    if !engine.is_searching() {
+        engine.fen(fen);
+        engine.search_movetime((SECONDS_PER_MOVE * 1000.0) as u64);
+    } else {
+        if !engine.search_time_over() {
+            engine.update_time_left(rl.get_frame_time());
+        } else {
+            if let Some(best_move) = engine.best_move() {
+                assert!(best_move.len() == 4 || best_move.len() == 5);
+                *selected = Some(Sq::from_str(&best_move[0..2]));
+                *target = Some(Sq::from_str(&best_move[2..4]));
+                *promoted_piece = if best_move.len() == 5 {
+                    Piece::from_char(best_move.chars().nth(4).unwrap())
+                } else {
+                        None
+                };
+                println!("{best_move:?}");
+            }
+        }
+    }
+}
+
+#[derive(PartialEq)]
+enum GameState {
+    Ongoing,
+    Checkmate,
+    Stalemate,
+    KingVsKing,
+}
+
+fn update_game_state(board: &Board, attack_info: &AttackInfo) -> GameState {
+    let mut ml = MoveList::new();
+    move_gen::generate_all(board, attack_info, &mut ml);
+    if ml.moves.len() == 0 {
+        if board.is_in_check(attack_info, board.state.side) {
+            return GameState::Checkmate;
+        } else {
+            return GameState::Stalemate;
+        }
+    }
+
+    // units[0] -> all the white pieces
+    // units[1] -> all the black pieces
+    // Since kings can't be captured, if both sides only have one piece
+    // then that means that only kings are left on the board
+    if board.pos.units[0].count_ones() == 1 && board.pos.units[1].count_ones() == 1 {
+        return GameState::KingVsKing;
+    }
+    GameState::Ongoing
+}
+
+const SECONDS_PER_MOVE: f32 = 1.0;
+
+// TODO: Detect draw by 50-move rule
+// TODO: Detect draw by three-fold repetition
+
+pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<(), String> {
+    let mut fen = String::from(FEN_POSITIONS[1]);
+    let mut board = Board::from_fen(&fen);
     let attack_info = AttackInfo::new();
+
+    let engine_a = EngineComm::new(&engine_a_path);
+    let engine_b = if let Some(b_path) = engine_b_path {
+        EngineComm::new(&b_path)
+    } else {
+        EngineComm::new(&engine_a_path)
+    };
+
+    if engine_a.is_err() || engine_b.is_err() {
+        return Err("Failed to establish communication with specified engine(s) ".to_string());
+    }
+    println!("[INFO] Time per move: {} s", SECONDS_PER_MOVE);
+    let mut engine_a = engine_a.unwrap();
+    let _ = engine_b.unwrap();
 
     let (mut rl, thread) = raylib::init()
         .size(900, 600)
@@ -177,11 +283,15 @@ pub fn gui_main(engine_a: String, engine_b: Option<String>) -> Result<(), String
     let piece_tex = rl.load_texture(&thread, "assets/pieceSpriteSheet.png")?;
     piece_tex.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
 
+    // Handle player input
     let mut selected = None;
     let mut target = None;
-
     let mut is_promotion = false;
     let mut promoted_piece = None;
+
+    let mut play_game = false;
+    let mut game_state = GameState::Ongoing;
+
     while !rl.window_should_close() {
         /* ==================== UPDATE PHASE ==================== */
         let size = Vector2::new(rl.get_screen_width() as f32, rl.get_screen_height() as f32);
@@ -202,30 +312,18 @@ pub fn gui_main(engine_a: String, engine_b: Option<String>) -> Result<(), String
             height: promoted_height,
         };
 
-        if is_promotion {
-            let mouse_pos = rl.get_mouse_position();
-            if rl.is_mouse_button_pressed(MouseButton::MOUSE_LEFT_BUTTON)
-                && promoted_boundary.check_collision_point_rec(mouse_pos) {
-                let mut piece = (mouse_pos.x / (promoted_boundary.width / 4.0)).trunc() as usize;
-                if board.state.side == PieceColor::Dark {
-                    piece += 6;
-                }
-                promoted_piece = match piece {
-                     1 => Some(Piece::LN),
-                     2 => Some(Piece::LB),
-                     3 => Some(Piece::LR),
-                     4 => Some(Piece::LQ),
-                     7 => Some(Piece::DN),
-                     8 => Some(Piece::DB),
-                     9 => Some(Piece::DR),
-                    10 => Some(Piece::DQ),
-                    _ => None
-                };
-                is_promotion = false;
-            }
+        if rl.is_key_pressed(KeyboardKey::KEY_S) {
+            play_game = !play_game;
         }
-        handle_board_selected(&rl, &board, &boundary, &mut selected);
-        handle_board_target(&rl, &board, &boundary, &selected, &mut target, &mut is_promotion);
+        if play_game && game_state != GameState::Ongoing {
+            play_game = false;
+        }
+
+        // update_player(&rl, &mut board, &mut fen, &attack_info, &boundary, &promoted_boundary, &mut selected, &mut target,
+        //     &mut is_promotion, &mut promoted_piece);
+        if play_game {
+            update_engine(&rl, &mut engine_a, &fen, &mut selected, &mut target, &mut promoted_piece);
+        }
 
         if selected.is_some() && target.is_some() && !is_promotion {
             // DEBUG INFO
@@ -233,19 +331,22 @@ pub fn gui_main(engine_a: String, engine_b: Option<String>) -> Result<(), String
             // println!("           Source: {}", Sq::to_string(selected.unwrap()));
             // println!("           Target: {}", Sq::to_string(target.unwrap()));
             // println!("  Promotion piece: {:?}", promoted_piece);
-            let curr_move = target_is_legal(&board, &attack_info, selected.unwrap(), target.unwrap(), promoted_piece);
+            let curr_move = move_is_legal(&board, &attack_info, selected.unwrap(), target.unwrap(), promoted_piece);
             // println!("\t = {}", curr_move.unwrap().to_str());
             if let Some(mv) = curr_move {
                 // Since the legality of the move has been checked, the return value isn't used
                 if !moves::make(&mut board, &attack_info, mv, MoveFlag::AllMoves) {
                     eprintln!("[ERROR] Illegal move! {}", mv.to_str());
                 }
+                fen = fen::gen_fen(&board);
             }
             selected = None;
             target = None;
             promoted_piece = None;
             is_promotion = false;
         }
+
+        game_state = update_game_state(&board, &attack_info);
 
         /* ==================== RENDER PHASE ==================== */
         let mut d = rl.begin_drawing(&thread);
