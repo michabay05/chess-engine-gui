@@ -5,7 +5,7 @@ The GUI requires all the engines provided in the command line argument to be loc
 Since the GUI can only communicate via the UCI protocol, the engines have to be able to use UCI for communications.
 ```
 $ cargo build --release
-$ ./engine-gui <engine-1> [engine-2]
+$ target/release/engine-gui <engine-1> [engine-2]
 ```
 
 ## Resource
