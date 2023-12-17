@@ -1,13 +1,14 @@
 use raylib::prelude::*;
 
 use crate::attack::AttackInfo;
-use crate::bb::BBUtil;
+use crate::bb::{BB, BBUtil};
 use crate::board::Board;
 use crate::comm::EngineComm;
 use crate::consts::{Piece, PieceColor, PieceType, Sq};
 use crate::fen::{self, FEN_POSITIONS};
 use crate::moves::{self, Move, MoveFlag, MoveUtil};
 use crate::move_gen::{self, MoveList};
+use crate::zobrist::ZobristInfo;
 use crate::{COL, ROW, SQ};
 
 const BACKGROUND: Color = Color::new(30, 30, 30, 255);
@@ -227,10 +228,13 @@ enum GameState {
     Checkmate,
     Stalemate,
     FiftyMoveRule,
+    ThreefoldRepetition,
     KingVsKing,
 }
 
-fn update_game_state(board: &mut Board, attack_info: &AttackInfo) -> GameState {
+type RepetitionTable = Vec<BB>;
+
+fn update_game_state(board: &mut Board, attack_info: &AttackInfo, zobrist_info: &ZobristInfo, key_table: &RepetitionTable) -> GameState {
     // units[0] -> all the white pieces
     // units[1] -> all the black pieces
     // Since kings can't be captured, if both sides only have one piece
@@ -249,7 +253,7 @@ fn update_game_state(board: &mut Board, attack_info: &AttackInfo) -> GameState {
     // Remove illegal moves from the move list
     for i in (0..ml.moves.len()).rev() {
         let clone = board.clone();
-        if !moves::make(board, attack_info, ml.moves[i], MoveFlag::AllMoves) {
+        if !moves::make(board, attack_info, zobrist_info, ml.moves[i], MoveFlag::AllMoves) {
             ml.moves.remove(i);
         }
         *board = clone;
@@ -262,6 +266,17 @@ fn update_game_state(board: &mut Board, attack_info: &AttackInfo) -> GameState {
             return GameState::Stalemate;
         }
     }
+
+    let mut repetition_count = 0;
+    for pos in key_table {
+        if board.state.key == *pos {
+            repetition_count += 1;
+        }
+        if repetition_count >= 3 {
+            return GameState::ThreefoldRepetition;
+        }
+    }
+
     GameState::Ongoing
 }
 
@@ -270,10 +285,12 @@ const SECONDS_PER_MOVE: f32 = 0.5;
 // TODO: Detect draw by three-fold repetition
 
 pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<(), String> {
-    // let mut fen = String::from(FEN_POSITIONS[3]);
-    let mut fen = "rn3rk1/pbppq1pp/1p2pb2/4N2Q/3PN3/3B4/PPP2PPP/R3K2R w KQ - 7 11".to_string();
-    let mut board = Board::from_fen(&fen);
     let attack_info = AttackInfo::new();
+    let zobrist_info = ZobristInfo::new();
+    let mut fen = String::from(FEN_POSITIONS[3]);
+    let mut board = Board::from_fen(&fen, &zobrist_info);
+    let mut key_table = RepetitionTable::new();
+    key_table.push(board.state.key);
 
     let engine_a = EngineComm::new(&engine_a_path);
     let engine_b = if let Some(b_path) = engine_b_path {
@@ -340,7 +357,7 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
             }
         }
 
-        game_state = update_game_state(&mut board, &attack_info);
+        game_state = update_game_state(&mut board, &attack_info, &zobrist_info, &key_table);
 
         if play_game && game_state != GameState::Ongoing {
             play_game = false;
@@ -368,10 +385,12 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
             // println!("\t = {}", curr_move.unwrap().to_str());
             if let Some(mv) = curr_move {
                 // Since the legality of the move has been checked, the return value isn't used
-                if !moves::make(&mut board, &attack_info, mv, MoveFlag::AllMoves) {
+                if !moves::make(&mut board, &attack_info, &zobrist_info, mv, MoveFlag::AllMoves) {
                     eprintln!("[ERROR] Illegal move! {}", mv.to_str());
+                } else {
+                    fen = fen::gen_fen(&board);
+                    key_table.push(board.state.key);
                 }
-                fen = fen::gen_fen(&board);
             }
             selected = None;
             target = None;

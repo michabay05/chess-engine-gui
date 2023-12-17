@@ -1,6 +1,7 @@
 use crate::bb::{BB, BBUtil};
 use crate::board::{Board, CastlingType, Position};
 use crate::consts::{Piece, PieceColor, Sq};
+use crate::zobrist::{self, ZobristInfo};
 use crate::SQ;
 
 pub const FEN_POSITIONS: [&str; 8] = [
@@ -14,7 +15,7 @@ pub const FEN_POSITIONS: [&str; 8] = [
     "rnbqkb1r/pp1p1pPp/8/2p1pP2/1P1P4/3P3P/P1P1P3/RNBQKBNR w KQkq e6 0 1",
 ];
 
-pub fn parse(fen: &str) -> Board {
+pub fn parse(fen: &str, zobrist_info: &ZobristInfo) -> Board {
     let mut board: Board = Board::new();
     let mut fen_parts = fen.split_ascii_whitespace().into_iter();
 
@@ -66,6 +67,9 @@ pub fn parse(fen: &str) -> Board {
 
     // Update units bitboard from piece bitboard
     board.pos.update_units();
+
+    board.state.key = zobrist::gen_board_key(&zobrist_info.key, &board);
+    board.state.lock = zobrist::gen_board_lock(&zobrist_info.lock, &board);
 
     board
 }

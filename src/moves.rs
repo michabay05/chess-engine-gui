@@ -2,6 +2,7 @@ use crate::attack::AttackInfo;
 use crate::bb::BBUtil;
 use crate::board::{self, Board};
 use crate::consts::{Direction, Piece, PieceColor, Sq};
+use crate::zobrist::{self, ZobristAction, ZobristInfo};
 
 pub type Move = u32;
 
@@ -131,6 +132,7 @@ const CASTLING_RIGHTS: [usize; 64] = [
     15, 15, 15, 15, 15, 15, 15, 15, 13, 15, 15, 15, 12, 15, 15, 14,
 ];
 
+/*
 pub fn make(
     main: &mut Board,
     attack_info: &AttackInfo,
@@ -269,5 +271,231 @@ pub fn make(
         } else {
             return false;
         }
+    }
+}
+*/
+
+pub fn make(
+    main: &mut Board,
+    attack_info: &AttackInfo,
+    zobrist_info: &ZobristInfo,
+    mv: Move,
+    move_flag: MoveFlag,
+) -> bool {
+    if move_flag == MoveFlag::AllMoves {
+        let clone = main.clone();
+
+        // Extract information about the move
+        let source = mv.source() as usize;
+        let target = mv.target() as usize;
+        let piece = Piece::to_num(Some(mv.piece()));
+        let promoted = mv.promoted();
+        let is_capture = mv.is_capture();
+        let is_twosquare = mv.is_twosquare();
+        let is_enpassant = mv.is_enpassant();
+        let is_castling = mv.is_castling();
+
+        // Move piece from source to target by removing source bit and turning on the target bit
+        main.pos.piece[piece].pop(source);
+        main.pos.piece[piece].set(target);
+
+        // Update hash key and lock
+        zobrist::update(
+            zobrist_info,
+            ZobristAction::TogglePiece(Piece::from_num(piece).unwrap(), Sq::from_num(source)),
+            main,
+        );
+        zobrist::update(
+            zobrist_info,
+            ZobristAction::TogglePiece(Piece::from_num(piece).unwrap(), Sq::from_num(target)),
+            main,
+        );
+
+        if is_capture {
+            let (start, end) = if main.state.side == PieceColor::Light {
+                (Piece::DP as usize, Piece::DK as usize)
+            } else {
+                (Piece::LP as usize, Piece::LK as usize)
+            };
+            for bb_piece in start..=end {
+                if main.pos.piece[bb_piece].get(target) {
+                    main.pos.piece[bb_piece].pop(target);
+                    zobrist::update(
+                        zobrist_info,
+                        ZobristAction::TogglePiece(
+                            Piece::from_num(bb_piece).unwrap(),
+                            Sq::from_num(target),
+                        ),
+                        main,
+                    );
+                    break;
+                }
+            }
+        }
+
+        if promoted.is_some() {
+            assert!(piece == 0 || piece == 6);
+            let promoted_num = Piece::to_num(promoted);
+            let pawn_type = if piece == 0 { Piece::LP } else { Piece::DP } as usize;
+            main.pos.piece[pawn_type].pop(target);
+            zobrist::update(
+                zobrist_info,
+                ZobristAction::TogglePiece(Piece::from_num(pawn_type).unwrap(), Sq::from_num(target)),
+                main,
+            );
+
+            main.pos.piece[promoted_num].set(target);
+            zobrist::update(
+                zobrist_info,
+                ZobristAction::TogglePiece(
+                    Piece::from_num(promoted_num).unwrap(),
+                    Sq::from_num(target),
+                ),
+                main,
+            );
+        }
+
+        if is_enpassant {
+            let pawn_type;
+            let direction;
+            if main.state.side == PieceColor::Light {
+                pawn_type = Piece::DP;
+                direction = Direction::North;
+            } else {
+                pawn_type = Piece::LP;
+                direction = Direction::South;
+            }
+            main.pos.piece[pawn_type as usize].pop((target as i32 + direction as i32) as usize);
+            zobrist::update(
+                zobrist_info,
+                ZobristAction::TogglePiece(pawn_type, Sq::from_num((target as i32 + direction as i32) as usize)),
+                main,
+            );
+        }
+        if main.state.enpassant != Sq::NoSq {
+            zobrist::update(
+                zobrist_info,
+                ZobristAction::SetEnpassant(main.state.enpassant),
+                main,
+            );
+        }
+        main.state.enpassant = Sq::NoSq;
+
+        if is_twosquare {
+            if main.state.side == PieceColor::Light {
+                main.state.enpassant =
+                    Sq::from_num((target as i32 + Direction::North as i32) as usize);
+            } else {
+                main.state.enpassant =
+                    Sq::from_num((target as i32 + Direction::South as i32) as usize);
+            }
+            zobrist::update(
+                zobrist_info,
+                ZobristAction::SetEnpassant(main.state.enpassant),
+                main,
+            );
+        }
+
+        if is_castling {
+            let rook_type;
+            let source_castling;
+            let target_castling;
+            match Sq::from_num(target) {
+                Sq::G1 => {
+                    rook_type = Piece::LR;
+                    source_castling = Sq::H1;
+                    target_castling = Sq::F1;
+                },
+                Sq::C1 => {
+                    rook_type = Piece::LR;
+                    source_castling = Sq::A1;
+                    target_castling = Sq::D1;
+                },
+                Sq::G8 => {
+                    rook_type = Piece::DR;
+                    source_castling = Sq::H8;
+                    target_castling = Sq::F8;
+                },
+                Sq::C8 => {
+                    rook_type = Piece::DR;
+                    source_castling = Sq::A8;
+                    target_castling = Sq::D8;
+                },
+                _ => unreachable!("Target castling square should only be [ G1, C1 ] for white and [ G8, C8 ] for black"),
+            };
+            main.pos.piece[rook_type as usize].pop(source_castling as usize);
+            zobrist::update(
+                zobrist_info,
+                ZobristAction::TogglePiece(rook_type, source_castling),
+                main,
+            );
+
+            main.pos.piece[rook_type as usize].set(target_castling as usize);
+            zobrist::update(
+                zobrist_info,
+                ZobristAction::TogglePiece(rook_type, target_castling),
+                main,
+            );
+        }
+
+        zobrist::update(zobrist_info, ZobristAction::Castling, main);
+        main.state.castling &= CASTLING_RIGHTS[source] as u8;
+        main.state.castling &= CASTLING_RIGHTS[target] as u8;
+        zobrist::update(zobrist_info, ZobristAction::Castling, main);
+
+        main.pos.update_units();
+
+        main.state.change_side();
+        zobrist::update(
+            zobrist_info,
+            ZobristAction::ChangeColor,
+            main,
+        );
+
+        /* ============= FOR DEBUG PURPOSES ONLY ===============
+        let key_from_scratch = zobrist::gen_board_key(&zobrist_info.key, &main);
+        let lock_from_scratch = zobrist::gen_board_lock(&zobrist_info.lock, &main);
+        assert!(
+            main.state.key == key_from_scratch,
+            "Incorrect key: main.state.key({}), from_scratch({})",
+            main.state.key,
+            key_from_scratch
+        );
+        assert!(
+            main.state.lock == lock_from_scratch,
+            "Incorrect lock: main.state.lock({}), from_scratch({})",
+            main.state.lock,
+            lock_from_scratch
+        );
+         ============= FOR DEBUG PURPOSES ONLY =============== */
+        let king_type = if main.state.side == PieceColor::Light {
+            Piece::DK
+        } else {
+            Piece::LK
+        } as usize;
+        if board::sq_attacked(
+            &main.pos,
+            attack_info,
+            Sq::from_num(main.pos.piece[king_type].lsb()),
+            main.state.side,
+        ) {
+            *main = clone;
+            return false;
+        } else {
+            // Increment full moves
+            if main.state.side == PieceColor::Dark {
+                main.state.full_moves += 1;
+            }
+            if piece == Piece::LP as usize || is_capture {
+                main.state.half_moves = 0;
+            } else {
+                main.state.half_moves += 1;
+            }
+            return true;
+        }
+    } else if mv.is_capture() {
+        make(main, attack_info, zobrist_info, mv, MoveFlag::AllMoves)
+    } else {
+        false
     }
 }

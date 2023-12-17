@@ -2,6 +2,7 @@ use crate::attack::AttackInfo;
 use crate::bb::{BBUtil, BB};
 use crate::consts::{Piece, PieceColor, Sq};
 use crate::fen;
+use crate::zobrist::ZobristInfo;
 use crate::SQ;
 
 #[derive(Clone)]
@@ -103,8 +104,8 @@ impl Board {
         }
     }
 
-    pub fn from_fen(fen: &str) -> Self {
-        fen::parse(fen)
+    pub fn from_fen(fen: &str, zobrist_info: &ZobristInfo) -> Self {
+        fen::parse(fen, zobrist_info)
     }
 
     pub fn find_piece(&self, sq: usize) -> Option<Piece> {

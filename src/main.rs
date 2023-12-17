@@ -9,6 +9,7 @@ mod magic_consts;
 mod magics;
 mod move_gen;
 mod moves;
+mod zobrist;
 
 use std::process::Command;
 use std::io::{Write, Read};
