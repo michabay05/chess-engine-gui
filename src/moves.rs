@@ -253,8 +253,13 @@ pub fn make(
             return false;
         } else {
             // Increment full moves
-            if main.state.side == PieceColor::Light {
+            if main.state.side == PieceColor::Dark {
                 main.state.full_moves += 1;
+            }
+            if piece == Piece::LP as usize || is_capture {
+                main.state.half_moves = 0;
+            } else {
+                main.state.half_moves += 1;
             }
             return true;
         }
