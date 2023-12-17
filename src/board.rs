@@ -62,7 +62,7 @@ impl State {
             enpassant: Sq::NoSq,
             castling: 0,
             half_moves: 0,
-            full_moves: 0,
+            full_moves: 1,
             key: 0,
             lock: 0,
         }

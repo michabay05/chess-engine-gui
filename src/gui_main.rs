@@ -196,7 +196,8 @@ fn update_player(
 
 
 fn update_engine(rl: &RaylibHandle, engine: &mut EngineComm, fen: &str,
-    selected: &mut Option<Sq>, target: &mut Option<Sq>, promoted_piece: &mut Option<Piece>
+    eval: &mut i32, is_mate: &mut bool, selected: &mut Option<Sq>,
+    target: &mut Option<Sq>, promoted_piece: &mut Option<Piece>
 ) {
     if !engine.is_searching() {
         engine.fen(fen);
@@ -205,14 +206,14 @@ fn update_engine(rl: &RaylibHandle, engine: &mut EngineComm, fen: &str,
         if !engine.search_time_over() {
             engine.update_time_left(rl.get_frame_time());
         } else {
-            if let Some(best_move) = engine.best_move() {
+            if let Some(best_move) = engine.best_move(eval, is_mate) {
                 assert!(best_move.len() == 4 || best_move.len() == 5);
                 *selected = Some(Sq::from_str(&best_move[0..2]));
                 *target = Some(Sq::from_str(&best_move[2..4]));
                 *promoted_piece = if best_move.len() == 5 {
                     Piece::from_char(best_move.chars().nth(4).unwrap())
                 } else {
-                        None
+                    None
                 };
                 println!("{best_move:?}");
             }
@@ -220,25 +221,16 @@ fn update_engine(rl: &RaylibHandle, engine: &mut EngineComm, fen: &str,
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 enum GameState {
     Ongoing,
     Checkmate,
     Stalemate,
+    FiftyMoveRule,
     KingVsKing,
 }
 
-fn update_game_state(board: &Board, attack_info: &AttackInfo) -> GameState {
-    let mut ml = MoveList::new();
-    move_gen::generate_all(board, attack_info, &mut ml);
-    if ml.moves.len() == 0 {
-        if board.is_in_check(attack_info, board.state.side) {
-            return GameState::Checkmate;
-        } else {
-            return GameState::Stalemate;
-        }
-    }
-
+fn update_game_state(board: &mut Board, attack_info: &AttackInfo) -> GameState {
     // units[0] -> all the white pieces
     // units[1] -> all the black pieces
     // Since kings can't be captured, if both sides only have one piece
@@ -246,16 +238,40 @@ fn update_game_state(board: &Board, attack_info: &AttackInfo) -> GameState {
     if board.pos.units[0].count_ones() == 1 && board.pos.units[1].count_ones() == 1 {
         return GameState::KingVsKing;
     }
+
+    if board.state.half_moves >= 100 {
+        return GameState::FiftyMoveRule;
+    }
+
+    let mut ml = MoveList::new();
+    move_gen::generate_all(&board, attack_info, &mut ml);
+
+    // Remove illegal moves from the move list
+    for i in (0..ml.moves.len()).rev() {
+        let clone = board.clone();
+        if !moves::make(board, attack_info, ml.moves[i], MoveFlag::AllMoves) {
+            ml.moves.remove(i);
+        }
+        *board = clone;
+    }
+
+    if ml.moves.len() == 0 {
+        if board.is_in_check(attack_info, board.state.xside) {
+            return GameState::Checkmate;
+        } else {
+            return GameState::Stalemate;
+        }
+    }
     GameState::Ongoing
 }
 
-const SECONDS_PER_MOVE: f32 = 1.0;
+const SECONDS_PER_MOVE: f32 = 0.5;
 
-// TODO: Detect draw by 50-move rule
 // TODO: Detect draw by three-fold repetition
 
 pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<(), String> {
-    let mut fen = String::from(FEN_POSITIONS[1]);
+    // let mut fen = String::from(FEN_POSITIONS[3]);
+    let mut fen = "rn3rk1/pbppq1pp/1p2pb2/4N2Q/3PN3/3B4/PPP2PPP/R3K2R w KQ - 7 11".to_string();
     let mut board = Board::from_fen(&fen);
     let attack_info = AttackInfo::new();
 
@@ -271,11 +287,12 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
     }
     println!("[INFO] Time per move: {} s", SECONDS_PER_MOVE);
     let mut engine_a = engine_a.unwrap();
-    let _ = engine_b.unwrap();
+    let mut engine_b = engine_b.unwrap();
 
     let (mut rl, thread) = raylib::init()
         .size(900, 600)
         .title("Chess Engine GUI")
+        .resizable()
         .build();
 
     rl.set_window_min_size(900, 600);
@@ -291,6 +308,9 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
 
     let mut play_game = false;
     let mut game_state = GameState::Ongoing;
+    let mut is_engine_a = true;
+    let mut eval = 0;
+    let mut is_mate = false;
 
     while !rl.window_should_close() {
         /* ==================== UPDATE PHASE ==================== */
@@ -314,15 +334,28 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
 
         if rl.is_key_pressed(KeyboardKey::KEY_S) {
             play_game = !play_game;
+        } else if rl.is_key_pressed(KeyboardKey::KEY_F) {
+            if rl.set_clipboard_text(&fen).is_err() {
+                eprintln!("[ERROR] Failed to copy clipboard to fen");
+            }
         }
+
+        game_state = update_game_state(&mut board, &attack_info);
+
         if play_game && game_state != GameState::Ongoing {
             play_game = false;
+            println!("[INFO] Game ended: {:?}", game_state);
         }
 
         // update_player(&rl, &mut board, &mut fen, &attack_info, &boundary, &promoted_boundary, &mut selected, &mut target,
         //     &mut is_promotion, &mut promoted_piece);
         if play_game {
-            update_engine(&rl, &mut engine_a, &fen, &mut selected, &mut target, &mut promoted_piece);
+            let engine = if is_engine_a { &mut engine_a } else { &mut engine_b };
+            // println!("[ENGINE {}] Fen: '{}'", if is_engine_a { 'A' } else { 'B' }, fen);
+            update_engine(&rl, engine, &fen, &mut eval, &mut is_mate, &mut selected, &mut target, &mut promoted_piece);
+            if !engine.is_searching() {
+                is_engine_a = !is_engine_a;
+            }
         }
 
         if selected.is_some() && target.is_some() && !is_promotion {
@@ -345,8 +378,6 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
             promoted_piece = None;
             is_promotion = false;
         }
-
-        game_state = update_game_state(&board, &attack_info);
 
         /* ==================== RENDER PHASE ==================== */
         let mut d = rl.begin_drawing(&thread);
@@ -382,6 +413,15 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         }
         let side_to_move_text = if board.state.side as usize == 0 { "White" } else { "Black" };
         d.draw_text(side_to_move_text, 750, 300, 30, Color::WHITE);
+        let eval_text = if !is_mate {
+            format!("{}{}",
+                if eval > 0 { '+' } else { ' ' },
+                eval as f32 / 100.0
+            )
+        } else {
+            format!("mate {}", eval)
+        };
+        d.draw_text(&eval_text, 750, 500, 30, Color::WHITE);
     }
 
     Ok(())

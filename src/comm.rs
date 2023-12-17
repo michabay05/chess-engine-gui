@@ -97,7 +97,7 @@ impl EngineComm {
             }
             if let Some(word) = words.next() {
                 match word {
-                    "name" => self.name = words.next().unwrap_or("Unknown").to_string(),
+                    "name" => self.name = words.next().unwrap_or("No name").to_string(),
                     _ => {}
                 };
             }
@@ -137,9 +137,26 @@ impl EngineComm {
         result
     }
 
-    pub fn best_move(&mut self) -> Option<String> {
+    pub fn best_move(&mut self, eval: &mut i32, is_mate: &mut bool) -> Option<String> {
         let mut buf = String::new();
         if let Some(ind) = self.read_until_rmatch("bestmove", &mut buf) {
+            let mut is_cp = true;
+            let mut last_score = buf.rfind("cp");
+            if last_score.is_none() {
+                last_score = buf.rfind("mate");
+                *is_mate = true;
+            }
+            if let Some(score_ind) = last_score {
+                let length = if *is_mate { 4 } else { 2 };
+                let a = &buf[(score_ind + length + 1)..].trim();
+                let space = a.find(char::is_whitespace).unwrap();
+                let eval_str = &a[..space];
+                if let Ok(val) = eval_str.parse::<i32>() {
+                    *eval = val;
+                } else {
+                    panic!("Couldn't parse '{}' from '{}'", eval_str, a);
+                }
+            }
             let best_move = &buf[(ind+8)..].trim_start();
             Some(best_move[0..5].trim().to_string())
         } else {
