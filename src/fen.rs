@@ -25,8 +25,10 @@ pub fn parse(fen: &str) -> Board {
     let side_to_move_str: &str = fen_parts.next().unwrap();
     if side_to_move_str == "w" {
         board.state.side = PieceColor::Light;
+        board.state.xside = PieceColor::Dark;
     } else if side_to_move_str == "b" {
         board.state.side = PieceColor::Dark;
+        board.state.xside = PieceColor::Light;
     }
 
     // Set castling right
