@@ -114,6 +114,10 @@ impl EngineComm {
         self.send(&format!("position fen {}", fen));
     }
 
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+
     pub fn search_movetime(&mut self, time_ms: u64) {
         self.send(&format!("go movetime {}", time_ms));
         self.search_time_left = Some(Duration::from_millis(time_ms));
@@ -145,20 +149,34 @@ impl EngineComm {
             if last_score.is_none() {
                 last_score = buf.rfind("mate");
                 *is_mate = true;
+                if last_score.is_none() {
+                    eprintln!("[WARN] Unable to parse move");
+                }
             }
             if let Some(score_ind) = last_score {
                 let length = if *is_mate { 4 } else { 2 };
-                let a = &buf[(score_ind + length + 1)..].trim();
-                let space = a.find(char::is_whitespace).unwrap();
-                let eval_str = &a[..space];
+                let substr = &buf[(score_ind + length)..].trim();
+                let space = substr.find(char::is_whitespace).unwrap();
+                let eval_str = &substr[..space];
                 if let Ok(val) = eval_str.parse::<i32>() {
                     *eval = val;
                 } else {
-                    panic!("Couldn't parse '{}' from '{}'", eval_str, a);
+                    eprintln!("[ERROR] Couldn't parse '{}' from '{}'", eval_str, substr);
+                    eprintln!("[ERROR] buf = '{}'", buf);
+                    panic!();
                 }
             }
-            let best_move = &buf[(ind+8)..].trim_start();
-            Some(best_move[0..5].trim().to_string())
+
+            // let best_move = &buf[(ind+8)..].trim_start();
+            // Some(best_move[0..5].trim().to_string())
+            let mut word_len = buf.len() - (ind + 8);
+            if word_len > 5 { word_len = 5; }
+            let mut substr = buf[(ind+8)..(ind+8+word_len)].split_whitespace();
+            if let Some(best_move) = substr.next() {
+                Some(best_move[0..4].to_string())
+            } else {
+                None
+            }
         } else {
             None
         }

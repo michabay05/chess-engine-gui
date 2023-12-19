@@ -11,6 +11,9 @@ use crate::move_gen::{self, MoveList};
 use crate::zobrist::ZobristInfo;
 use crate::{COL, ROW, SQ};
 
+use std::io::{self, BufWriter, Write};
+use std::path::Path;
+
 const BACKGROUND: Color = Color::new(30, 30, 30, 255);
 const PROMOTION_BACKGROUND: Color = Color::new(46, 46, 46, 220);
 
@@ -19,7 +22,7 @@ const LIGHT_SELECTED_CLR: Color = Color::new(187, 204, 68, 255);
 const DARK_SQ_CLR: Color = Color::new(238, 238, 210, 255);
 const DARK_SELECTED_CLR: Color = Color::new(244, 246, 128, 255);
 
-fn draw_board(d: &mut RaylibDrawHandle, sec: &Rectangle, selected: Option<Sq>) {
+fn draw_board(d: &mut RaylibDrawHandle, sec: &Rectangle, selected: &Option<Sq>, target: &Option<Sq>) {
     assert!(sec.width == sec.height);
     let mut cell_size = Vector2::one();
     cell_size.scale(sec.width / 8.0);
@@ -28,7 +31,13 @@ fn draw_board(d: &mut RaylibDrawHandle, sec: &Rectangle, selected: Option<Sq>) {
         for f in 0..8 {
             let mut sq_clr = if (r + f) % 2 != 0 { LIGHT_SQ_CLR } else { DARK_SQ_CLR };
             if let Some(sq) = selected {
-                let sq = sq as usize;
+                let sq = *sq as usize;
+                if sq == SQ!(r, f) {
+                    sq_clr = if (ROW!(sq) + COL!(sq)) % 2 != 0 { LIGHT_SELECTED_CLR } else { DARK_SELECTED_CLR };
+                }
+            }
+            if let Some(sq) = target {
+                let sq = *sq as usize;
                 if sq == SQ!(r, f) {
                     sq_clr = if (ROW!(sq) + COL!(sq)) % 2 != 0 { LIGHT_SELECTED_CLR } else { DARK_SELECTED_CLR };
                 }
@@ -44,7 +53,6 @@ fn draw_board(d: &mut RaylibDrawHandle, sec: &Rectangle, selected: Option<Sq>) {
             );
         }
     }
-    d.draw_rectangle_lines_ex(sec, 1, Color::RED);
 }
 
 fn draw_pieces(d: &mut RaylibDrawHandle, tex: &Texture2D, board: &Board, sec: &Rectangle) {
@@ -95,19 +103,20 @@ fn handle_board_selected(
 ) {
     if rl.is_mouse_button_pressed(MouseButton::MOUSE_LEFT_BUTTON) {
         let mouse_pos = rl.get_mouse_position();
-        // if selected.is_some() { return; }
         let mut temp_selected = None;
         if board_sec.check_collision_point_rec(mouse_pos) {
             let col = ((mouse_pos.x - board_sec.x) / (board_sec.width / 8.0)) as usize;
             let row = ((mouse_pos.y - board_sec.y) / (board_sec.height / 8.0)) as usize;
             temp_selected = Some(Sq::from_num(SQ!(row, col)));
+        } else {
+            *selected = None;
+            return;
         }
-        /* if let Some(sq) = temp_selected {
-            if board.find_piece(sq as usize).is_none() { return; }
-        } */
         let sq = temp_selected.unwrap();
         if let Some(piece) = board.find_piece(sq as usize) {
-            if piece as usize / 6 != board.state.side as usize { return; }
+            if selected.is_some() && piece as usize / 6 != board.state.side as usize {
+                return;
+            }
         } else {
             return;
         }
@@ -116,12 +125,6 @@ fn handle_board_selected(
             return;
         }
         *selected = temp_selected;
-        /* if selected.is_some() {
-            println!("Source: {}", Sq::to_string(selected.unwrap()));
-        } else {
-            println!("Source: None");
-        } */
-        // println!("Source: {}", Sq::to_string(selected.unwrap()));
     }
 }
 
@@ -146,7 +149,6 @@ fn handle_board_target(
         } else {
             println!("Target: None");
         } */
-        // println!("Target: {}\n", Sq::to_string(target.unwrap()));
         let piece = board.find_piece(selected.unwrap() as usize);
         if piece.is_none() { return; }
         let piece = piece.unwrap();
@@ -196,7 +198,7 @@ fn update_player(
 }
 
 
-fn update_engine(rl: &RaylibHandle, engine: &mut EngineComm, fen: &str,
+fn update_engine(frame_time: f32, engine: &mut EngineComm, fen: &str,
     eval: &mut i32, is_mate: &mut bool, selected: &mut Option<Sq>,
     target: &mut Option<Sq>, promoted_piece: &mut Option<Piece>
 ) {
@@ -205,18 +207,23 @@ fn update_engine(rl: &RaylibHandle, engine: &mut EngineComm, fen: &str,
         engine.search_movetime((SECONDS_PER_MOVE * 1000.0) as u64);
     } else {
         if !engine.search_time_over() {
-            engine.update_time_left(rl.get_frame_time());
+            engine.update_time_left(frame_time);
         } else {
             if let Some(best_move) = engine.best_move(eval, is_mate) {
-                assert!(best_move.len() == 4 || best_move.len() == 5);
-                *selected = Some(Sq::from_str(&best_move[0..2]));
-                *target = Some(Sq::from_str(&best_move[2..4]));
-                *promoted_piece = if best_move.len() == 5 {
-                    Piece::from_char(best_move.chars().nth(4).unwrap())
+                assert!(best_move.len() == 4 || best_move.len() == 5, "Length: {}", best_move.len());
+                println!("[{}] '{}'", best_move.len(), &best_move);
+                // Move from engine: "b7b8q"
+                *selected = Some(Sq::from_str(&best_move[0..2])); // "b7"
+                *target = Some(Sq::from_str(&best_move[2..4]));   // "b8"
+                *promoted_piece = if best_move.len() == 5 {       // 'q'
+                    if let Some(piece_char) = best_move.chars().nth(4) {
+                        Piece::from_char(piece_char)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 };
-                println!("{best_move:?}");
             }
         }
     }
@@ -225,31 +232,28 @@ fn update_engine(rl: &RaylibHandle, engine: &mut EngineComm, fen: &str,
 #[derive(Debug, PartialEq)]
 enum GameState {
     Ongoing,
-    Checkmate,
-    Stalemate,
-    FiftyMoveRule,
-    ThreefoldRepetition,
-    KingVsKing,
+    LightWinByCheckmate,
+    DarkWinByCheckmate,
+    DrawByStalemate,
+    DrawByFiftyMoveRule,
+    DrawByThreefoldRepetition,
+    DrawByKingVsKing,
+    // TODO: missing draw by insufficient material
 }
 
-type RepetitionTable = Vec<BB>;
-
-fn update_game_state(board: &mut Board, attack_info: &AttackInfo, zobrist_info: &ZobristInfo, key_table: &RepetitionTable) -> GameState {
+fn update_game_state(board: &mut Board, attack_info: &AttackInfo, zobrist_info: &ZobristInfo, boards: &Vec<Board>) -> GameState {
     // units[0] -> all the white pieces
     // units[1] -> all the black pieces
     // Since kings can't be captured, if both sides only have one piece
     // then that means that only kings are left on the board
     if board.pos.units[0].count_ones() == 1 && board.pos.units[1].count_ones() == 1 {
-        return GameState::KingVsKing;
+        return GameState::DrawByKingVsKing;
     }
-
     if board.state.half_moves >= 100 {
-        return GameState::FiftyMoveRule;
+        return GameState::DrawByFiftyMoveRule;
     }
-
     let mut ml = MoveList::new();
     move_gen::generate_all(&board, attack_info, &mut ml);
-
     // Remove illegal moves from the move list
     for i in (0..ml.moves.len()).rev() {
         let clone = board.clone();
@@ -258,39 +262,93 @@ fn update_game_state(board: &mut Board, attack_info: &AttackInfo, zobrist_info: 
         }
         *board = clone;
     }
-
+    // Check for checkmate or stalemate
     if ml.moves.len() == 0 {
         if board.is_in_check(attack_info, board.state.xside) {
-            return GameState::Checkmate;
+            if board.state.xside == PieceColor::Light {
+                return GameState::LightWinByCheckmate;
+            } else {
+                return GameState::DarkWinByCheckmate;
+            }
         } else {
-            return GameState::Stalemate;
+            return GameState::DrawByStalemate;
         }
     }
-
+    // Check for draw by three fold repetition
     let mut repetition_count = 0;
-    for pos in key_table {
-        if board.state.key == *pos {
+    for pos in boards {
+        if board.state.key == pos.state.key && board.state.lock == pos.state.lock {
             repetition_count += 1;
         }
-        if repetition_count >= 3 {
-            return GameState::ThreefoldRepetition;
+        if repetition_count == 3 {
+            return GameState::DrawByThreefoldRepetition;
         }
     }
 
     GameState::Ongoing
 }
 
-const SECONDS_PER_MOVE: f32 = 0.5;
+fn save_game(
+    filename: &str, engine_a_name: &str, engine_b_name: &str, fen: &str,
+    game_state: &GameState, move_list: &Vec<Move>
+) -> Result<(), io::Error> {
+    let f = std::fs::File::create(Path::new(filename))?;
+    let mut f = BufWriter::new(f);
+    writeln!(f, "[Event \"?\"]")?;
+    writeln!(f, "[Site \"?\"]")?;
+    writeln!(f, "[Date \"????.??.??\"]")?;
+    writeln!(f, "[Round \"?\"]")?;
+    writeln!(f, "[White \"{}\"]", engine_a_name)?;
+    writeln!(f, "[Black \"{}\"]", engine_b_name)?;
+    let result_str = match game_state {
+        GameState::Ongoing => "*",
+        GameState::LightWinByCheckmate => "1-0",
+        GameState::DarkWinByCheckmate => "0-1",
+        _ => "1/2-1/2"
+    };
+    writeln!(f, "[Result \"{}\"]", result_str)?;
+    writeln!(f, "[FEN \"{}\"]", fen)?;
+    writeln!(f, "[SetUp \"1\"]")?;
+    writeln!(f)?;
 
-// TODO: Detect draw by three-fold repetition
+    for (i, mv) in move_list.iter().enumerate() {
+        if i % 2 == 0 {
+            write!(f, "{}. ", (i / 2) + 1)?;
+        }
+        // TODO: change move from coordinate form to short algebraic notation
+        write!(f, "{}", mv.to_str().trim())?;
+        // Every 5 moves from each side, add a newline
+        if i == move_list.len() - 1 {
+            writeln!(f, " {}", result_str)?;
+        } else if i != 0 && i % 10 == 0 {
+            writeln!(f)?;
+        } else {
+            write!(f, " ")?;
+        }
+    }
+
+    Ok(())
+}
+
+const SECONDS_PER_MOVE: f32 = 0.5;
 
 pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<(), String> {
     let attack_info = AttackInfo::new();
     let zobrist_info = ZobristInfo::new();
-    let mut fen = String::from(FEN_POSITIONS[3]);
+
+    let original_fen = FEN_POSITIONS[2];
+    let mut fen = String::from(original_fen);
     let mut board = Board::from_fen(&fen, &zobrist_info);
-    let mut key_table = RepetitionTable::new();
-    key_table.push(board.state.key);
+    let mut board_list = Vec::<Board>::new();
+    board_list.push(board.clone());
+    let mut board_index = board_list.len() - 1;
+
+    // TODO: place the following into a single struct
+    // - board before making a move
+    // - the move made on the aforementioned board
+    // - if the move was made by an engine
+    //      = evaluation
+    //      = is mate
 
     let engine_a = EngineComm::new(&engine_a_path);
     let engine_b = if let Some(b_path) = engine_b_path {
@@ -302,9 +360,11 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
     if engine_a.is_err() || engine_b.is_err() {
         return Err("Failed to establish communication with specified engine(s) ".to_string());
     }
-    println!("[INFO] Time per move: {} s", SECONDS_PER_MOVE);
     let mut engine_a = engine_a.unwrap();
     let mut engine_b = engine_b.unwrap();
+
+    println!("[INFO] Time per move: {} s", SECONDS_PER_MOVE);
+    println!("[INFO] {} vs {}", engine_a.name(), engine_b.name());
 
     let (mut rl, thread) = raylib::init()
         .size(900, 600)
@@ -317,6 +377,8 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
     let piece_tex = rl.load_texture(&thread, "assets/pieceSpriteSheet.png")?;
     piece_tex.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
 
+    let font = rl.load_font(&thread, "assets/fonts/Inter-Regular.ttf")?;
+
     // Handle player input
     let mut selected = None;
     let mut target = None;
@@ -328,6 +390,8 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
     let mut is_engine_a = true;
     let mut eval = 0;
     let mut is_mate = false;
+
+    let mut move_list = Vec::<Move>::new();
 
     while !rl.window_should_close() {
         /* ==================== UPDATE PHASE ==================== */
@@ -349,31 +413,73 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
             height: promoted_height,
         };
 
-        if rl.is_key_pressed(KeyboardKey::KEY_S) {
-            play_game = !play_game;
+        let right_boundary = Rectangle {
+            x: boundary.x + boundary.width + margin.x,
+            y: boundary.y,
+            width: size.x - (boundary.x + boundary.width + 2.0*margin.x),
+            height: min_side,
+        };
+
+        if rl.is_key_pressed(KeyboardKey::KEY_SPACE) {
+            if board_index == board_list.len() - 1 {
+                play_game = !play_game;
+            } else {
+                eprintln!(
+                    "[WARN] The board must be at the current position. You are {} moves behind the current.",
+                    (board_list.len() - 1) - board_index
+                );
+            }
+        } else if rl.is_key_pressed(KeyboardKey::KEY_LEFT) {
+            if !play_game {
+                board_index = board_index.saturating_sub(1);
+                board = board_list[board_index].clone();
+            }
+        } else if rl.is_key_pressed(KeyboardKey::KEY_RIGHT) {
+            if !play_game {
+                board_index += 1;
+                if board_index >= board_list.len() { board_index = board_list.len() - 1; };
+                board = board_list[board_index].clone();
+            }
+        } else if rl.is_key_pressed(KeyboardKey::KEY_UP) {
+            board_index = 0;
+            board = board_list[board_index].clone();
+        } else if rl.is_key_pressed(KeyboardKey::KEY_DOWN) {
+            board_index = board_list.len() - 1;
+            board = board_list[board_index].clone();
         } else if rl.is_key_pressed(KeyboardKey::KEY_F) {
             if rl.set_clipboard_text(&fen).is_err() {
                 eprintln!("[ERROR] Failed to copy clipboard to fen");
             }
+        } else if rl.is_key_pressed(KeyboardKey::KEY_S) {
+            if !play_game {
+                if save_game("game.pgn", engine_a.name(), engine_b.name(), &original_fen, &game_state, &move_list).is_err() {
+                    return Err("Couldn't save game to file 'game.pgn'".to_string());
+                }
+            }
         }
 
-        game_state = update_game_state(&mut board, &attack_info, &zobrist_info, &key_table);
+        game_state = update_game_state(&mut board, &attack_info, &zobrist_info, &board_list);
 
-        if play_game && game_state != GameState::Ongoing {
-            play_game = false;
+        if game_state != GameState::Ongoing {
+            if play_game { play_game = false; }
             println!("[INFO] Game ended: {:?}", game_state);
         }
 
-        // update_player(&rl, &mut board, &mut fen, &attack_info, &boundary, &promoted_boundary, &mut selected, &mut target,
-        //     &mut is_promotion, &mut promoted_piece);
         if play_game {
             let engine = if is_engine_a { &mut engine_a } else { &mut engine_b };
-            // println!("[ENGINE {}] Fen: '{}'", if is_engine_a { 'A' } else { 'B' }, fen);
-            update_engine(&rl, engine, &fen, &mut eval, &mut is_mate, &mut selected, &mut target, &mut promoted_piece);
+            update_engine(rl.get_frame_time(), engine, &fen, &mut eval, &mut is_mate, &mut selected, &mut target, &mut promoted_piece);
+            // Correct the promotion piece from the UCI string
+            if let Some(piece) = promoted_piece {
+                let mut piece_num = piece as usize % 6;
+                if board.state.side == PieceColor::Dark { piece_num += 6 };
+                promoted_piece = Piece::from_num(piece_num);
+            }
             if !engine.is_searching() {
                 is_engine_a = !is_engine_a;
             }
         }
+        // update_player(&rl, &mut board, &attack_info, &boundary, &promoted_boundary, &mut selected, &mut target,
+        //     &mut is_promotion, &mut promoted_piece);
 
         if selected.is_some() && target.is_some() && !is_promotion {
             // DEBUG INFO
@@ -384,12 +490,13 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
             let curr_move = move_is_legal(&board, &attack_info, selected.unwrap(), target.unwrap(), promoted_piece);
             // println!("\t = {}", curr_move.unwrap().to_str());
             if let Some(mv) = curr_move {
-                // Since the legality of the move has been checked, the return value isn't used
-                if !moves::make(&mut board, &attack_info, &zobrist_info, mv, MoveFlag::AllMoves) {
-                    eprintln!("[ERROR] Illegal move! {}", mv.to_str());
-                } else {
+                if moves::make(&mut board, &attack_info, &zobrist_info, mv, MoveFlag::AllMoves) {
+                    move_list.push(mv);
                     fen = fen::gen_fen(&board);
-                    key_table.push(board.state.key);
+                    board_list.push(board.clone());
+                    board_index += 1;
+                } else {
+                    eprintln!("[ERROR] Illegal move! {}", mv.to_str());
                 }
             }
             selected = None;
@@ -401,7 +508,7 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         /* ==================== RENDER PHASE ==================== */
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(BACKGROUND);
-        draw_board(&mut d, &boundary, selected);
+        draw_board(&mut d, &boundary, &selected, &target);
         draw_pieces(&mut d, &piece_tex, &board, &boundary);
         if is_promotion {
             d.draw_rectangle_rec(promoted_boundary, PROMOTION_BACKGROUND);
@@ -430,17 +537,26 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
                 );
             }
         }
-        let side_to_move_text = if board.state.side as usize == 0 { "White" } else { "Black" };
-        d.draw_text(side_to_move_text, 750, 300, 30, Color::WHITE);
-        let eval_text = if !is_mate {
-            format!("{}{}",
-                if eval > 0 { '+' } else { ' ' },
-                eval as f32 / 100.0
-            )
-        } else {
-            format!("mate {}", eval)
-        };
-        d.draw_text(&eval_text, 750, 500, 30, Color::WHITE);
+
+        // let side_to_move_text = if board.state.side as usize == 0 { "White" } else { "Black" };
+        // // d.draw_text(side_to_move_text, 750, 200, 30, Color::WHITE);
+        // d.draw_text_ex(&font, &side_to_move_text, Vector2::new(750.0, 200.0), font.baseSize as f32, 0.0, Color::WHITE);
+        // let eval_text = if !is_mate {
+        //     format!("{}{}",
+        //         if eval > 0 { '+' } else { ' ' },
+        //         eval as f32 / 100.0
+        //     )
+        // } else {
+        //     format!("mate {}", eval)
+        // };
+        // // d.draw_text(&eval_text, 750, 500, 30, Color::WHITE);
+        // d.draw_text_ex(&font, &eval_text, Vector2::new(750.0, 500.0), font.baseSize as f32, 0.0, Color::WHITE);
+        d.draw_rectangle_lines_ex(right_boundary, 1, Color::RED);
+        let players = &format!("{} vs {}", engine_a.name(), engine_b.name());
+        let text_dim = measure_text_ex(&font, &players, font.baseSize as f32, 0.0);
+        d.draw_text_ex(&font, &players,
+            Vector2::new(right_boundary.x + (right_boundary.width / 2.0) - (text_dim.x / 2.0), right_boundary.height * 0.2),
+            font.baseSize as f32, 0.0, Color::WHITE);
     }
 
     Ok(())

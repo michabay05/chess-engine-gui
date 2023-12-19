@@ -112,7 +112,7 @@ impl Piece {
     }
 
     pub fn from_char(piece_char: char) -> Option<Self> {
-        assert!(PIECE_CHAR.into_iter().any(|x| x == piece_char));
+        assert!(PIECE_CHAR.into_iter().any(|x| x == piece_char), "c = {}", piece_char);
         let char_index = PIECE_CHAR
             .into_iter()
             .position(|x| x == piece_char)
