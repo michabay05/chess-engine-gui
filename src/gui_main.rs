@@ -22,22 +22,21 @@ const LIGHT_SELECTED_CLR: Color = Color::new(187, 204, 68, 255);
 const DARK_SQ_CLR: Color = Color::new(238, 238, 210, 255);
 const DARK_SELECTED_CLR: Color = Color::new(244, 246, 128, 255);
 
-fn draw_board(d: &mut RaylibDrawHandle, sec: &Rectangle, selected: &Option<Sq>, target: &Option<Sq>) {
+fn draw_board(d: &mut RaylibDrawHandle, sec: &Rectangle, b_ui: &BoardUI) {
     assert!(sec.width == sec.height);
     let mut cell_size = Vector2::one();
     cell_size.scale(sec.width / 8.0);
 
     for r in 0..8 {
         for f in 0..8 {
-            let mut sq_clr = if (r + f) % 2 != 0 { LIGHT_SQ_CLR } else { DARK_SQ_CLR };
-            if let Some(sq) = selected {
-                let sq = *sq as usize;
+            let light_sq = (r + f) % 2 != 0;
+            let mut sq_clr = if light_sq { LIGHT_SQ_CLR } else { DARK_SQ_CLR };
+            if let Some(sq) = b_ui.selected {
                 if sq == SQ!(r, f) {
                     sq_clr = if (ROW!(sq) + COL!(sq)) % 2 != 0 { LIGHT_SELECTED_CLR } else { DARK_SELECTED_CLR };
                 }
             }
-            if let Some(sq) = target {
-                let sq = *sq as usize;
+            if let Some(sq) = b_ui.target {
                 if sq == SQ!(r, f) {
                     sq_clr = if (ROW!(sq) + COL!(sq)) % 2 != 0 { LIGHT_SELECTED_CLR } else { DARK_SELECTED_CLR };
                 }
@@ -55,6 +54,24 @@ fn draw_board(d: &mut RaylibDrawHandle, sec: &Rectangle, selected: &Option<Sq>, 
     }
 }
 
+fn draw_piece(d: &mut RaylibDrawHandle, tex: &Texture2D, target: Rectangle, piece: Piece) {
+    let (color, kind) = Piece::to_tuple(Some(piece));
+    let source_rect = Rectangle::new(
+        (kind as i32 * tex.width() / 6) as f32,
+        (color as i32 * tex.height() / 2) as f32,
+        (tex.width() / 6) as f32,
+        (tex.height() / 2) as f32,
+    );
+    d.draw_texture_pro(
+        &tex,
+        source_rect,
+        target,
+        Vector2::zero(),
+        0.0,
+        Color::WHITE,
+    );
+}
+
 fn draw_pieces(d: &mut RaylibDrawHandle, tex: &Texture2D, board: &Board, sec: &Rectangle) {
     let min_side = f32::min(sec.width, sec.height);
     let mut cell_size = Vector2::one();
@@ -62,29 +79,15 @@ fn draw_pieces(d: &mut RaylibDrawHandle, tex: &Texture2D, board: &Board, sec: &R
 
     for r in 0..8 {
         for f in 0..8 {
-            let piece = board.find_piece(SQ!(r, f));
-            if piece.is_none() { continue; }
-            let (color, kind) = Piece::to_tuple(piece);
-            let source_rect = Rectangle::new(
-                (kind as i32 * tex.width() / 6) as f32,
-                (color as i32 * tex.height() / 2) as f32,
-                (tex.width() / 6) as f32,
-                (tex.height() / 2) as f32,
-            );
-            let target_rect = Rectangle::new(
-                sec.x + (f as f32) * cell_size.x,
-                sec.y + (r as f32) * cell_size.y,
-                cell_size.x,
-                cell_size.y
-            );
-            d.draw_texture_pro(
-                &tex,
-                source_rect,
-                target_rect,
-                Vector2::zero(),
-                0.0,
-                Color::WHITE,
-            );
+            if let Some(piece) = board.find_piece(SQ!(r, f)) {
+                let target = Rectangle::new(
+                    sec.x + (f as f32) * cell_size.x,
+                    sec.y + (r as f32) * cell_size.y,
+                    cell_size.x,
+                    cell_size.y
+                );
+                draw_piece(d, tex, target, piece);
+            }
         }
     }
 }
@@ -92,11 +95,14 @@ fn draw_pieces(d: &mut RaylibDrawHandle, tex: &Texture2D, board: &Board, sec: &R
 fn move_is_legal(board: &Board, attack_info: &AttackInfo, source: Sq, target: Sq, promoted: Option<Piece>) -> Option<Move> {
     let mut ml = MoveList::new();
     let piece = board.find_piece(source as usize);
+    if piece.is_none() {
+        println!("'{}' -> '{}'", source, target);
+        board.display();
+    }
     assert!(piece.is_some());
     move_gen::generate_by_piece(board, attack_info, &mut ml, piece.unwrap());
     ml.search(source, target, promoted)
 }
-
 
 fn handle_board_selected(
     rl: &RaylibHandle, board: &Board, board_sec: &Rectangle, selected: &mut Option<Sq>
@@ -144,11 +150,6 @@ fn handle_board_target(
         }
         if temp_selected == *selected { return; }
         *target = temp_selected;
-        /* if target.is_some() {
-            println!("Target: {}\n", Sq::to_string(target.unwrap()));
-        } else {
-            println!("Target: None");
-        } */
         let piece = board.find_piece(selected.unwrap() as usize);
         if piece.is_none() { return; }
         let piece = piece.unwrap();
@@ -157,12 +158,6 @@ fn handle_board_target(
             && (ROW!(sq as usize) == 0 || ROW!(sq as usize) == 7) {
             *is_promotion = true;
         }
-        /* if let Some(sq) = temp_selected {
-            if (piece == Piece::LP || piece == Piece::DP)
-                && (ROW!(sq as usize) == 0 || ROW!(sq as usize) == 7) {
-                *is_promotion = true;
-            }
-        } */
     }
 }
 
@@ -229,7 +224,7 @@ fn update_engine(frame_time: f32, engine: &mut EngineComm, fen: &str,
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum GameState {
     Ongoing,
     LightWinByCheckmate,
@@ -241,7 +236,7 @@ enum GameState {
     // TODO: missing draw by insufficient material
 }
 
-fn update_game_state(board: &mut Board, attack_info: &AttackInfo, zobrist_info: &ZobristInfo, boards: &Vec<Board>) -> GameState {
+fn update_game_state(board: &mut Board, attack_info: &AttackInfo, zobrist_info: &ZobristInfo, boards: &Vec<BoardInfo>) -> GameState {
     // units[0] -> all the white pieces
     // units[1] -> all the black pieces
     // Since kings can't be captured, if both sides only have one piece
@@ -277,11 +272,12 @@ fn update_game_state(board: &mut Board, attack_info: &AttackInfo, zobrist_info: 
     // Check for draw by three fold repetition
     let mut repetition_count = 0;
     for pos in boards {
-        if board.state.key == pos.state.key && board.state.lock == pos.state.lock {
+        let b = &pos.b_ui.board;
+        if board.state.key == b.state.key && board.state.lock == b.state.lock {
             repetition_count += 1;
-        }
-        if repetition_count == 3 {
-            return GameState::DrawByThreefoldRepetition;
+            if repetition_count == 3 {
+                return GameState::DrawByThreefoldRepetition;
+            }
         }
     }
 
@@ -290,7 +286,7 @@ fn update_game_state(board: &mut Board, attack_info: &AttackInfo, zobrist_info: 
 
 fn save_game(
     filename: &str, engine_a_name: &str, engine_b_name: &str, fen: &str,
-    game_state: &GameState, move_list: &Vec<Move>
+    game_state: &GameState, board_info: &Vec<BoardInfo>
 ) -> Result<(), io::Error> {
     let f = std::fs::File::create(Path::new(filename))?;
     let mut f = BufWriter::new(f);
@@ -311,14 +307,19 @@ fn save_game(
     writeln!(f, "[SetUp \"1\"]")?;
     writeln!(f)?;
 
-    for (i, mv) in move_list.iter().enumerate() {
-        if i % 2 == 0 {
+    for (i, b_info) in board_info.iter().enumerate() {
+        if i % 2 == 0 && b_info.game_state == GameState::Ongoing {
             write!(f, "{}. ", (i / 2) + 1)?;
         }
         // TODO: change move from coordinate form to short algebraic notation
-        write!(f, "{}", mv.to_str().trim())?;
+        if let Some(mv) = b_info.mv {
+            write!(f, "{}", mv.to_str().trim())?;
+        } else {
+            eprintln!("[ERROR] Couldn't find move associated with the current position");
+            b_info.b_ui.board.display();
+        }
         // Every 5 moves from each side, add a newline
-        if i == move_list.len() - 1 {
+        if i == board_info.len() - 1 {
             writeln!(f, " {}", result_str)?;
         } else if i != 0 && i % 10 == 0 {
             writeln!(f)?;
@@ -330,25 +331,64 @@ fn save_game(
     Ok(())
 }
 
-const SECONDS_PER_MOVE: f32 = 0.5;
+#[derive(Clone)]
+struct BoardUI {
+    board: Board,
+    selected: Option<usize>,
+    target: Option<usize>,
+    check: Option<usize>,
+}
+
+impl BoardUI {
+    fn from(board: &Board) -> Self {
+        Self {
+            board: board.clone(),
+            selected: None,
+            target: None,
+            check: None,
+        }
+    }
+
+    fn highlight_selected(&mut self, sq: usize) {
+        // Reset everything before setting the `selected` square
+        self.selected = None;
+        self.target = None;
+        self.check = None;
+
+        self.selected = Some(sq);
+    }
+
+    fn highlight_target(&mut self, sq: usize) {
+        self.target = Some(sq);
+    }
+}
+
+struct BoardInfo {
+    b_ui: BoardUI,
+    mv: Option<Move>,
+    game_state: GameState,
+}
+
+impl BoardInfo {
+    fn from(b_ui: &BoardUI) -> Self {
+        Self {
+            b_ui: b_ui.clone(),
+            mv: None,
+            game_state: GameState::Ongoing
+        }
+    }
+
+    fn update(&mut self, mv: Move, game_state: GameState) {
+        self.mv = Some(mv);
+        self.game_state = game_state;
+    }
+}
+
+const SECONDS_PER_MOVE: f32 = 0.3;
 
 pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<(), String> {
     let attack_info = AttackInfo::new();
     let zobrist_info = ZobristInfo::new();
-
-    let original_fen = FEN_POSITIONS[2];
-    let mut fen = String::from(original_fen);
-    let mut board = Board::from_fen(&fen, &zobrist_info);
-    let mut board_list = Vec::<Board>::new();
-    board_list.push(board.clone());
-    let mut board_index = board_list.len() - 1;
-
-    // TODO: place the following into a single struct
-    // - board before making a move
-    // - the move made on the aforementioned board
-    // - if the move was made by an engine
-    //      = evaluation
-    //      = is mate
 
     let engine_a = EngineComm::new(&engine_a_path);
     let engine_b = if let Some(b_path) = engine_b_path {
@@ -391,7 +431,14 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
     let mut eval = 0;
     let mut is_mate = false;
 
-    let mut move_list = Vec::<Move>::new();
+    let original_fen = FEN_POSITIONS[2];
+    let mut fen = String::from(original_fen);
+    fen = String::from("rnb1kb1r/p2p1ppp/4p3/2PpP3/q2P4/5Q2/P2B1PPP/RN2K1NR w KQkq - 3 12");
+    let mut b_ui = BoardUI::from(&Board::from_fen(&fen, &zobrist_info));
+
+    let mut history = Vec::<BoardInfo>::new();
+    history.push(BoardInfo::from(&b_ui));
+    let mut index = history.len() - 1;
 
     while !rl.window_should_close() {
         /* ==================== UPDATE PHASE ==================== */
@@ -421,57 +468,67 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         };
 
         if rl.is_key_pressed(KeyboardKey::KEY_SPACE) {
-            if board_index == board_list.len() - 1 {
+            if index == history.len() - 1 {
                 play_game = !play_game;
             } else {
                 eprintln!(
                     "[WARN] The board must be at the current position. You are {} moves behind the current.",
-                    (board_list.len() - 1) - board_index
+                    (history.len() - 1) - index
                 );
             }
         } else if rl.is_key_pressed(KeyboardKey::KEY_LEFT) {
             if !play_game {
-                board_index = board_index.saturating_sub(1);
-                board = board_list[board_index].clone();
+                index = index.saturating_sub(1);
+                b_ui = history[index].b_ui.clone();
             }
         } else if rl.is_key_pressed(KeyboardKey::KEY_RIGHT) {
             if !play_game {
-                board_index += 1;
-                if board_index >= board_list.len() { board_index = board_list.len() - 1; };
-                board = board_list[board_index].clone();
+                index += 1;
+                if index >= history.len() { index = history.len() - 1; };
+                b_ui = history[index].b_ui.clone();
             }
         } else if rl.is_key_pressed(KeyboardKey::KEY_UP) {
-            board_index = 0;
-            board = board_list[board_index].clone();
+            if !play_game {
+                index = 0;
+                b_ui = history[index].b_ui.clone();
+            }
         } else if rl.is_key_pressed(KeyboardKey::KEY_DOWN) {
-            board_index = board_list.len() - 1;
-            board = board_list[board_index].clone();
+            if !play_game {
+                index = history.len() - 1;
+                b_ui = history[index].b_ui.clone();
+            }
         } else if rl.is_key_pressed(KeyboardKey::KEY_F) {
-            if rl.set_clipboard_text(&fen).is_err() {
+            let current_fen = fen::gen_fen(&b_ui.board);
+            if rl.set_clipboard_text(&current_fen).is_err() {
                 eprintln!("[ERROR] Failed to copy clipboard to fen");
             }
         } else if rl.is_key_pressed(KeyboardKey::KEY_S) {
             if !play_game {
-                if save_game("game.pgn", engine_a.name(), engine_b.name(), &original_fen, &game_state, &move_list).is_err() {
+                if save_game("game.pgn", engine_a.name(), engine_b.name(), &original_fen, &game_state, &history).is_err() {
                     return Err("Couldn't save game to file 'game.pgn'".to_string());
                 }
             }
         }
 
-        game_state = update_game_state(&mut board, &attack_info, &zobrist_info, &board_list);
+        game_state = update_game_state(&mut b_ui.board, &attack_info, &zobrist_info, &history);
 
-        if game_state != GameState::Ongoing {
-            if play_game { play_game = false; }
-            println!("[INFO] Game ended: {:?}", game_state);
+        if play_game && game_state != GameState::Ongoing {
+            play_game = false;
         }
 
         if play_game {
             let engine = if is_engine_a { &mut engine_a } else { &mut engine_b };
             update_engine(rl.get_frame_time(), engine, &fen, &mut eval, &mut is_mate, &mut selected, &mut target, &mut promoted_piece);
+            if let Some(sq) = selected {
+                b_ui.highlight_selected(sq as usize);
+            }
+            if let Some(sq) = target {
+                b_ui.highlight_target(sq as usize);
+            }
             // Correct the promotion piece from the UCI string
             if let Some(piece) = promoted_piece {
                 let mut piece_num = piece as usize % 6;
-                if board.state.side == PieceColor::Dark { piece_num += 6 };
+                if b_ui.board.state.side == PieceColor::Dark { piece_num += 6 };
                 promoted_piece = Piece::from_num(piece_num);
             }
             if !engine.is_searching() {
@@ -487,14 +544,16 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
             // println!("           Source: {}", Sq::to_string(selected.unwrap()));
             // println!("           Target: {}", Sq::to_string(target.unwrap()));
             // println!("  Promotion piece: {:?}", promoted_piece);
-            let curr_move = move_is_legal(&board, &attack_info, selected.unwrap(), target.unwrap(), promoted_piece);
+            let curr_move = move_is_legal(&b_ui.board, &attack_info, selected.unwrap(), target.unwrap(), promoted_piece);
             // println!("\t = {}", curr_move.unwrap().to_str());
             if let Some(mv) = curr_move {
-                if moves::make(&mut board, &attack_info, &zobrist_info, mv, MoveFlag::AllMoves) {
-                    move_list.push(mv);
-                    fen = fen::gen_fen(&board);
-                    board_list.push(board.clone());
-                    board_index += 1;
+                if moves::make(&mut b_ui.board, &attack_info, &zobrist_info, mv, MoveFlag::AllMoves) {
+                    fen = fen::gen_fen(&b_ui.board);
+                    if let Some(b_info) = history.last_mut() {
+                        b_info.update(mv, game_state);
+                    }
+                    history.push(BoardInfo::from(&b_ui));
+                    index += 1;
                 } else {
                     eprintln!("[ERROR] Illegal move! {}", mv.to_str());
                 }
@@ -508,11 +567,11 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         /* ==================== RENDER PHASE ==================== */
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(BACKGROUND);
-        draw_board(&mut d, &boundary, &selected, &target);
-        draw_pieces(&mut d, &piece_tex, &board, &boundary);
+        draw_board(&mut d, &boundary, &b_ui);
+        draw_pieces(&mut d, &piece_tex, &b_ui.board, &boundary);
         if is_promotion {
             d.draw_rectangle_rec(promoted_boundary, PROMOTION_BACKGROUND);
-            let color = board.state.side as usize;
+            let color = b_ui.board.state.side as usize;
             for i in (PieceType::Knight as usize)..=(PieceType::Queen as usize) {
                 let kind = i;
                 let source_rect = Rectangle::new(
@@ -538,9 +597,8 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
             }
         }
 
-        // let side_to_move_text = if board.state.side as usize == 0 { "White" } else { "Black" };
-        // // d.draw_text(side_to_move_text, 750, 200, 30, Color::WHITE);
-        // d.draw_text_ex(&font, &side_to_move_text, Vector2::new(750.0, 200.0), font.baseSize as f32, 0.0, Color::WHITE);
+        let side_to_move_text = if b_ui.board.state.side as usize == 0 { "White" } else { "Black" };
+        d.draw_text_ex(&font, &side_to_move_text, Vector2::new(850.0, 600.0), font.baseSize as f32, 0.0, Color::WHITE);
         // let eval_text = if !is_mate {
         //     format!("{}{}",
         //         if eval > 0 { '+' } else { ' ' },
@@ -557,6 +615,18 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         d.draw_text_ex(&font, &players,
             Vector2::new(right_boundary.x + (right_boundary.width / 2.0) - (text_dim.x / 2.0), right_boundary.height * 0.2),
             font.baseSize as f32, 0.0, Color::WHITE);
+
+        let eval_text = if !is_mate {
+            format!("{}{}",
+                if eval > 0 { '+' } else { ' ' },
+                eval as f32 / 100.0
+            )
+        } else {
+            format!("mate {}", eval)
+        };
+        // d.draw_text(&eval_text, 750, 500, 30, Color::WHITE);
+        d.draw_text_ex(&font, &eval_text, Vector2::new(750.0, 500.0), font.baseSize as f32, 0.0, Color::WHITE);
+        d.draw_text_ex(&font, &format!("{:?}", game_state), Vector2::new(800.0, 400.0), font.baseSize as f32, 0.0, Color::WHITE);
     }
 
     Ok(())
