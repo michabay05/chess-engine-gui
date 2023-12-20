@@ -13,6 +13,7 @@ use crate::{COL, ROW, SQ};
 
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
+use std::time::Instant;
 
 const BACKGROUND: Color = Color::new(30, 30, 30, 255);
 const PROMOTION_BACKGROUND: Color = Color::new(46, 46, 46, 220);
@@ -72,24 +73,19 @@ fn draw_piece(d: &mut RaylibDrawHandle, tex: &Texture2D, target: Rectangle, piec
     );
 }
 
-fn draw_pieces(d: &mut RaylibDrawHandle, tex: &Texture2D, board: &Board, sec: &Rectangle) {
+fn piece_rect_on_board(sec: &Rectangle, sq: usize) -> Rectangle {
     let min_side = f32::min(sec.width, sec.height);
     let mut cell_size = Vector2::one();
     cell_size.scale(min_side / 8.0);
 
-    for r in 0..8 {
-        for f in 0..8 {
-            if let Some(piece) = board.find_piece(SQ!(r, f)) {
-                let target = Rectangle::new(
-                    sec.x + (f as f32) * cell_size.x,
-                    sec.y + (r as f32) * cell_size.y,
-                    cell_size.x,
-                    cell_size.y
-                );
-                draw_piece(d, tex, target, piece);
-            }
-        }
-    }
+    let r = ROW!(sq);
+    let f = COL!(sq);
+    Rectangle::new(
+        sec.x + (f as f32) * cell_size.x,
+        sec.y + (r as f32) * cell_size.y,
+        cell_size.x,
+        cell_size.y
+    )
 }
 
 fn move_is_legal(board: &Board, attack_info: &AttackInfo, source: Sq, target: Sq, promoted: Option<Piece>) -> Option<Move> {
@@ -384,11 +380,21 @@ impl BoardInfo {
     }
 }
 
-const SECONDS_PER_MOVE: f32 = 0.3;
+const SECONDS_PER_MOVE: f32 = 1.0;
 
 pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<(), String> {
     let attack_info = AttackInfo::new();
     let zobrist_info = ZobristInfo::new();
+
+    // Load in a list of fens
+    let fens = if let Ok(content) = std::fs::read_to_string("fens.txt") {
+        content
+    } else {
+        eprintln!("[ERROR] Couldn't load fens from 'fens.txt'");
+        // Exiting due to the failure of reading fens from a file is temporary.
+        // This is mostly needed for testing
+        std::process::exit(0);
+    };
 
     let engine_a = EngineComm::new(&engine_a_path);
     let engine_b = if let Some(b_path) = engine_b_path {
@@ -413,6 +419,7 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         .build();
 
     rl.set_window_min_size(900, 600);
+    rl.set_target_fps(60);
 
     let piece_tex = rl.load_texture(&thread, "assets/pieceSpriteSheet.png")?;
     piece_tex.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
@@ -433,12 +440,24 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
 
     let original_fen = FEN_POSITIONS[2];
     let mut fen = String::from(original_fen);
-    fen = String::from("rnb1kb1r/p2p1ppp/4p3/2PpP3/q2P4/5Q2/P2B1PPP/RN2K1NR w KQkq - 3 12");
+    fen = String::from("r3kb1r/ppp2pp1/3pb2p/4p3/3nP2N/3P2P1/PPP2PBP/RN2K2R w KQkq - 1 11");
     let mut b_ui = BoardUI::from(&Board::from_fen(&fen, &zobrist_info));
 
     let mut history = Vec::<BoardInfo>::new();
     history.push(BoardInfo::from(&b_ui));
     let mut index = history.len() - 1;
+
+    // Animating moves
+    let mut anim_start_time = Instant::now();
+    let mut anim_mv = None;
+    let mut is_animating = false;
+    let mut anim_target_board = None;
+    let ANIM_DURATION_SECS = f32::min(0.15, SECONDS_PER_MOVE - 0.05);
+
+    // Update animations
+    //   - Get: (start and target square) and their positions on the screen
+    //   - Linear interpolate (lerp) between the two positions using the variable `t`
+    //   - `t` refers to the progress into the animation cycle (0.0, .20, .55, .84, 1.0)
 
     while !rl.window_should_close() {
         /* ==================== UPDATE PHASE ==================== */
@@ -502,6 +521,18 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
             if rl.set_clipboard_text(&current_fen).is_err() {
                 eprintln!("[ERROR] Failed to copy clipboard to fen");
             }
+        } else if rl.is_key_pressed(KeyboardKey::KEY_R) {
+            // Reset board and load a random fen to current position
+            if !play_game {
+                history.clear();
+                index = 0;
+                fn random_fen(fens: &String) -> &str {
+                    let rand_ind = rand::random::<usize>() % 500;
+                    fens.lines().nth(rand_ind).unwrap()
+                }
+                b_ui = BoardUI::from(&Board::from_fen(random_fen(&fens), &zobrist_info));
+                history.push(BoardInfo::from(&b_ui));
+            }
         } else if rl.is_key_pressed(KeyboardKey::KEY_S) {
             if !play_game {
                 if save_game("game.pgn", engine_a.name(), engine_b.name(), &original_fen, &game_state, &history).is_err() {
@@ -538,6 +569,17 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         // update_player(&rl, &mut board, &attack_info, &boundary, &promoted_boundary, &mut selected, &mut target,
         //     &mut is_promotion, &mut promoted_piece);
 
+        fn redraw_anim(d: &mut RaylibDrawHandle, boundary: &Rectangle, tex: &Texture2D, mv: Move, t: f32) {
+            let source_rect = piece_rect_on_board(boundary, mv.source() as usize);
+            let target_rect = piece_rect_on_board(boundary, mv.target() as usize);
+            let piece = mv.piece();
+            let source_vec = Vector2::new(source_rect.x, source_rect.y);
+            let target_vec = Vector2::new(target_rect.x, target_rect.y);
+            let anim_pos = source_vec.lerp(target_vec, t as f32);
+            let anim_rect = Rectangle::new(anim_pos.x, anim_pos.y, source_rect.width, source_rect.height);
+            draw_piece(d, tex, anim_rect, piece);
+        }
+
         if selected.is_some() && target.is_some() && !is_promotion {
             // DEBUG INFO
             // println!("Going to make move, here's the info:");
@@ -546,14 +588,19 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
             // println!("  Promotion piece: {:?}", promoted_piece);
             let curr_move = move_is_legal(&b_ui.board, &attack_info, selected.unwrap(), target.unwrap(), promoted_piece);
             // println!("\t = {}", curr_move.unwrap().to_str());
+            anim_target_board = Some(b_ui.board.clone());
             if let Some(mv) = curr_move {
-                if moves::make(&mut b_ui.board, &attack_info, &zobrist_info, mv, MoveFlag::AllMoves) {
-                    fen = fen::gen_fen(&b_ui.board);
+                if moves::make(anim_target_board.as_mut().unwrap(), &attack_info, &zobrist_info, mv, MoveFlag::AllMoves) {
+                    fen = fen::gen_fen(anim_target_board.as_ref().unwrap());
                     if let Some(b_info) = history.last_mut() {
                         b_info.update(mv, game_state);
                     }
                     history.push(BoardInfo::from(&b_ui));
                     index += 1;
+
+                    anim_mv = Some(mv);
+                    anim_start_time = Instant::now();
+                    is_animating = true;
                 } else {
                     eprintln!("[ERROR] Illegal move! {}", mv.to_str());
                 }
@@ -568,7 +615,44 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(BACKGROUND);
         draw_board(&mut d, &boundary, &b_ui);
-        draw_pieces(&mut d, &piece_tex, &b_ui.board, &boundary);
+        let skip_sq = if index == history.len() - 1 { b_ui.selected } else { None };
+        draw_pieces(&mut d, skip_sq, &piece_tex, &b_ui, &boundary);
+
+        fn draw_pieces(d: &mut RaylibDrawHandle, skip_sq: Option<usize>, tex: &Texture2D, b_ui: &BoardUI, sec: &Rectangle) {
+            for r in 0..8 {
+                for f in 0..8 {
+                    let sq = SQ!(r, f);
+                    if let Some(s_sq) = skip_sq {
+                        if s_sq == sq {
+                            continue;
+                        }
+                    }
+                    if let Some(piece) = b_ui.board.find_piece(sq) {
+                        draw_piece(d, tex, piece_rect_on_board(sec, sq), piece);
+                    }
+                }
+            }
+        }
+
+        if let Some(mv) = anim_mv {
+            // anim_t = (NOW - anim_start_time) / ANIM_DURATION_SECS;
+            let elapsed = Instant::now().duration_since(anim_start_time);
+            let anim_t = elapsed.div_f32(ANIM_DURATION_SECS).as_secs_f32();
+            if is_animating && anim_t >= 1.0 {
+                is_animating = false;
+                anim_mv = None;
+                b_ui.board = anim_target_board.unwrap();
+                anim_target_board = None;
+                // Instantly make the move
+                draw_pieces(&mut d, None, &piece_tex, &b_ui, &boundary);
+            }
+
+            if is_animating {
+                redraw_anim(&mut d, &boundary, &piece_tex, mv, anim_t);
+            }
+        }
+        // ================= NOTE: this instantly draws all the piece on the board
+        // draw_pieces(&mut d, &piece_tex, &b_ui.board, &boundary);
         if is_promotion {
             d.draw_rectangle_rec(promoted_boundary, PROMOTION_BACKGROUND);
             let color = b_ui.board.state.side as usize;
@@ -599,17 +683,8 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
 
         let side_to_move_text = if b_ui.board.state.side as usize == 0 { "White" } else { "Black" };
         d.draw_text_ex(&font, &side_to_move_text, Vector2::new(850.0, 600.0), font.baseSize as f32, 0.0, Color::WHITE);
-        // let eval_text = if !is_mate {
-        //     format!("{}{}",
-        //         if eval > 0 { '+' } else { ' ' },
-        //         eval as f32 / 100.0
-        //     )
-        // } else {
-        //     format!("mate {}", eval)
-        // };
-        // // d.draw_text(&eval_text, 750, 500, 30, Color::WHITE);
-        // d.draw_text_ex(&font, &eval_text, Vector2::new(750.0, 500.0), font.baseSize as f32, 0.0, Color::WHITE);
         d.draw_rectangle_lines_ex(right_boundary, 1, Color::RED);
+
         let players = &format!("{} vs {}", engine_a.name(), engine_b.name());
         let text_dim = measure_text_ex(&font, &players, font.baseSize as f32, 0.0);
         d.draw_text_ex(&font, &players,
@@ -627,6 +702,8 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         // d.draw_text(&eval_text, 750, 500, 30, Color::WHITE);
         d.draw_text_ex(&font, &eval_text, Vector2::new(750.0, 500.0), font.baseSize as f32, 0.0, Color::WHITE);
         d.draw_text_ex(&font, &format!("{:?}", game_state), Vector2::new(800.0, 400.0), font.baseSize as f32, 0.0, Color::WHITE);
+
+        d.draw_fps(800, 580);
     }
 
     Ok(())

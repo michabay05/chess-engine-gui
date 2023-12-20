@@ -14,7 +14,7 @@ pub struct EngineComm {
 }
 
 impl EngineComm {
-    const MAX_RE_READ_COUNT: usize = 3;
+    const MAX_RE_READ_COUNT: usize = 4;
     pub fn new(file_path: &str) -> Result<Self, ()> {
         let mut process = Command::new(file_path)
             .stdin(Stdio::piped())
@@ -47,8 +47,8 @@ impl EngineComm {
         match stdout.read(&mut buffer) {
             Ok(_) => {
                 buf.clear();
-                // *buf = String::from_utf8_lossy(&buffer).into_owned();
-                *buf = String::from_utf8((&buffer).to_vec()).unwrap();
+                *buf = String::from_utf8_lossy(&buffer).into_owned();
+                // *buf = String::from_utf8((&buffer).to_vec()).unwrap();
             }
             Err(e) => eprintln!("[ERROR] {e}"),
         };
@@ -167,16 +167,23 @@ impl EngineComm {
                 }
             }
 
-            // let best_move = &buf[(ind+8)..].trim_start();
-            // Some(best_move[0..5].trim().to_string())
+            let best_move = &buf[(ind+8)..].trim_start();
+            Some(best_move[0..5].trim().to_string())
+            /*
             let mut word_len = buf.len() - (ind + 8);
             if word_len > 5 { word_len = 5; }
-            let mut substr = buf[(ind+8)..(ind+8+word_len)].split_whitespace();
+            // +8 for "bestmove", +1 for space
+            let mut substr = buf[(ind+8)..=(ind+8+word_len)].split_whitespace();
             if let Some(best_move) = substr.next() {
-                Some(best_move[0..4].to_string())
+                let a = &buf[(ind+8)..];
+                let b = &buf[(ind+8)..(ind+8+word_len)];
+                println!("[MAIN] '{a}'");
+                println!("[ SUB] '{b}'");
+                println!("[BEST] '{best_move}'");
+                Some(best_move.trim().to_string())
             } else {
                 None
-            }
+            }*/
         } else {
             None
         }
