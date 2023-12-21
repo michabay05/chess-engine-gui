@@ -42,6 +42,12 @@ fn draw_board(d: &mut RaylibDrawHandle, sec: &Rectangle, b_ui: &BoardUI) {
                     sq_clr = if (ROW!(sq) + COL!(sq)) % 2 != 0 { LIGHT_SELECTED_CLR } else { DARK_SELECTED_CLR };
                 }
             }
+            if let Some(sq) = b_ui.check {
+                if sq == SQ!(r, f) {
+                    let check_clr = Color::new(189, 55, 55, 255);
+                    sq_clr = Color::color_alpha_blend(&sq_clr, &check_clr, &Color::new(255, 255, 255, 200));
+                }
+            }
 
             d.draw_rectangle_v(
                 Vector2::new(
@@ -229,7 +235,10 @@ enum GameState {
     DrawByFiftyMoveRule,
     DrawByThreefoldRepetition,
     DrawByKingVsKing,
-    // TODO: missing draw by insufficient material
+    // TODO: missing draw by other insufficient material
+    //       - KN vs k
+    //       - KB vs k
+    //       - KB vs kb: same color bishops
 }
 
 fn update_game_state(board: &mut Board, attack_info: &AttackInfo, zobrist_info: &ZobristInfo, boards: &Vec<BoardInfo>) -> GameState {
@@ -357,6 +366,12 @@ impl BoardUI {
     fn highlight_target(&mut self, sq: usize) {
         self.target = Some(sq);
     }
+
+    fn highlight_check(&mut self, is_white: bool) {
+        let king_ind = if is_white { 5 } else { 11 };
+        let king_sq = self.board.pos.piece[king_ind].lsb();
+        self.check = Some(king_sq);
+    }
 }
 
 struct BoardInfo {
@@ -440,7 +455,7 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
 
     let original_fen = FEN_POSITIONS[2];
     let mut fen = String::from(original_fen);
-    fen = String::from("r3kb1r/ppp2pp1/3pb2p/4p3/3nP2N/3P2P1/PPP2PBP/RN2K2R w KQkq - 1 11");
+    fen = String::from("r4k2/p1pp3Q/1n4p1/3p4/5N2/2PB4/P4rqP/2K1R3 b - - 3 16");
     let mut b_ui = BoardUI::from(&Board::from_fen(&fen, &zobrist_info));
 
     let mut history = Vec::<BoardInfo>::new();
@@ -452,7 +467,7 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
     let mut anim_mv = None;
     let mut is_animating = false;
     let mut anim_target_board = None;
-    let ANIM_DURATION_SECS = f32::min(0.15, SECONDS_PER_MOVE - 0.05);
+    let anim_duration_secs = f32::min(0.15, SECONDS_PER_MOVE - 0.05);
 
     // Update animations
     //   - Get: (start and target square) and their positions on the screen
@@ -598,6 +613,12 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
                     history.push(BoardInfo::from(&b_ui));
                     index += 1;
 
+
+                    let b = anim_target_board.as_ref().unwrap();
+                    if b.is_in_check(&attack_info, b.state.xside) {
+                        b_ui.highlight_check(b.state.side as usize == 0);
+                    }
+
                     anim_mv = Some(mv);
                     anim_start_time = Instant::now();
                     is_animating = true;
@@ -637,7 +658,7 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         if let Some(mv) = anim_mv {
             // anim_t = (NOW - anim_start_time) / ANIM_DURATION_SECS;
             let elapsed = Instant::now().duration_since(anim_start_time);
-            let anim_t = elapsed.div_f32(ANIM_DURATION_SECS).as_secs_f32();
+            let anim_t = elapsed.div_f32(anim_duration_secs).as_secs_f32();
             if is_animating && anim_t >= 1.0 {
                 is_animating = false;
                 anim_mv = None;
