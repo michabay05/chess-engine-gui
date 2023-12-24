@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="400"
+   height="52.083332"
+   viewBox="0 0 105.83333 13.780381"
+   version="1.1"
+   id="svg5"
+   inkscape:export-filename="/home/michabay/Documents/chess-engine-gui/assets/game-end-icons.png"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96"
+   inkscape:version="1.1.2 (0a00cf5339, 2022-02-04)"
+   sodipodi:docname="game-end-icons.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview7"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:pageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:document-units="px"
+     showgrid="false"
+     inkscape:lockguides="true"
+     inkscape:snap-bbox="true"
+     inkscape:bbox-nodes="true"
+     inkscape:snap-bbox-midpoints="true"
+     inkscape:snap-bbox-edge-midpoints="true"
+     inkscape:bbox-paths="true"
+     fit-margin-top="0"
+     fit-margin-left="0"
+     fit-margin-right="0"
+     fit-margin-bottom="0"
+     inkscape:zoom="1.842284"
+     inkscape:cx="166.36958"
+     inkscape:cy="34.739487"
+     inkscape:window-width="1366"
+     inkscape:window-height="723"
+     inkscape:window-x="0"
+     inkscape:window-y="22"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1"
+     height="14.78038mm"
+     units="px"
+     width="400px" />
+  <defs
+     id="defs2" />
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <g
+       id="draw_black"
+       transform="matrix(0.7349537,0,0,0.7349537,39.687499,0)">
+      <path
+         class="icon-shadow"
+         opacity="0.3"
+         d="m 9,0.5 a 9,9 0 1 0 9,9 9,9 0 0 0 -9,-9 z"
+         id="path378" />
+      <path
+         class="icon-background"
+         fill="#312e2b"
+         d="M 9,0 A 9,9 0 1 0 18,9 9,9 0 0 0 9,0 Z"
+         id="path380" />
+      <path
+         d="M 2.92,7 V 5.84 c 0.81,0 1.75,-0.28 1.8,-1.22 h 1.42 v 5.5 H 4.34 V 7 Z M 11.79,4.61 7,13.88 H 5 L 9.8,4.62 Z m -1.94,9.27 c -0.08,-1.54 1.38,-2.19 2.57,-2.89 0.33,-0.17 0.78,-0.4 0.78,-0.78 a 0.66,0.66 0 0 0 -0.68,-0.7 c -0.69,0 -0.94,0.58 -0.92,1.16 H 10 A 2.17,2.17 0 0 1 10.64,8.88 2.74,2.74 0 0 1 12.55,8.26 C 14.1,8.26 15,8.78 15,10 c 0,1.82 -2.66,2.18 -2.66,2.5 h 2.73 v 1.38 z"
+         id="path382" />
+      <path
+         class="icon-component-shadow"
+         fill="#ffffff"
+         d="M 2.92,6.51 V 5.34 c 0.81,0 1.75,-0.28 1.8,-1.22 h 1.42 v 5.5 H 4.34 V 6.51 Z M 11.79,4.12 7,13.38 H 5 L 9.8,4.12 Z m -1.94,9.26 c -0.08,-1.54 1.38,-2.19 2.57,-2.89 0.33,-0.17 0.78,-0.4 0.78,-0.78 a 0.66,0.66 0 0 0 -0.68,-0.7 c -0.69,0 -0.94,0.58 -0.92,1.16 H 10 a 2.17,2.17 0 0 1 0.64,-1.79 2.74,2.74 0 0 1 1.91,-0.62 c 1.55,0 2.45,0.52 2.45,1.74 0,1.82 -2.66,2.18 -2.66,2.5 h 2.73 v 1.38 z"
+         id="path384" />
+    </g>
+    <g
+       id="checkmate_black"
+       transform="matrix(0.7349537,0,0,0.7349537,13.229166,0.183738)">
+      <path
+         class="icon-shadow"
+         opacity="0.3"
+         d="m 9,0.5 a 9,9 0 1 0 9,9 9,9 0 0 0 -9,-9 z"
+         id="path445" />
+      <path
+         class="icon-background"
+         fill="#312e2b"
+         d="M 9,0 A 9,9 0 1 0 18,9 9,9 0 0 0 9,0 Z"
+         id="path447" />
+      <path
+         d="m 11.44,8.41 h 1.74 l 0.1,-1.55 H 11.54 L 11.72,4.08 H 10.17 L 10,6.86 H 8.31 L 8.49,4.08 H 6.94 L 6.76,6.86 H 5 L 4.9,8.41 H 6.66 L 6.55,10.09 H 4.82 l -0.1,1.55 H 6.46 L 6.28,14.42 H 7.83 L 8,11.64 h 1.69 l -0.18,2.78 h 1.55 l 0.18,-2.78 H 13 l 0.1,-1.55 h -1.76 z m -3.33,1.68 0.1,-1.68 h 1.68 l -0.1,1.68 z"
+         id="path449" />
+      <path
+         class="icon-component-shadow"
+         fill="#ffffff"
+         d="m 11.44,7.91 h 1.74 l 0.1,-1.55 H 11.54 L 11.72,3.58 H 10.17 L 10,6.36 H 8.31 L 8.49,3.58 H 6.94 L 6.76,6.36 H 5 L 4.9,7.91 H 6.66 L 6.55,9.59 H 4.82 l -0.1,1.55 H 6.46 L 6.28,13.92 H 7.83 L 8,11.14 h 1.69 l -0.18,2.78 h 1.55 l 0.18,-2.78 H 13 L 13.1,9.59 H 11.34 Z M 8.11,9.59 8.21,7.91 h 1.68 l -0.1,1.68 z"
+         id="path451" />
+    </g>
+    <g
+       id="winner"
+       transform="scale(0.7349537)">
+      <g
+         id="g520">
+        <path
+           class="icon-shadow"
+           opacity="0.3"
+           d="m 9,0.5 a 9,9 0 1 0 9,9 9,9 0 0 0 -9,-9 z"
+           id="path516" />
+        <path
+           class="icon-background"
+           fill="#dbac16"
+           d="M 9,0 A 9,9 0 1 0 18,9 9,9 0 0 0 9,0 Z"
+           id="path518" />
+      </g>
+      <g
+         class="icon-component-shadow"
+         opacity="0.2"
+         id="g524">
+        <path
+           class="cls-4"
+           d="M 4.35,12.66 2.86,7.72 A 0.37,0.37 0 0 1 2.86,7.51 0.35,0.35 0 0 1 3,7.34 0.31,0.31 0 0 1 3.2,7.27 0.3,0.3 0 0 1 3.41,7.32 L 6.27,9.15 H 6.41 6.55 A 0.31,0.31 0 0 0 6.68,9.09 0.48,0.48 0 0 0 6.77,9 L 8.69,5.54 A 0.4,0.4 0 0 1 8.82,5.41 0.37,0.37 0 0 1 9,5.41 0.36,0.36 0 0 1 9.31,5.59 L 11.22,9 a 0.52,0.52 0 0 0 0.1,0.11 0.31,0.31 0 0 0 0.13,0.06 h 0.14 0.13 l 2.89,-1.83 a 0.3,0.3 0 0 1 0.21,-0.05 0.31,0.31 0 0 1 0.2,0.07 0.35,0.35 0 0 1 0.12,0.17 0.37,0.37 0 0 1 0,0.21 l -1.49,4.94 a 0.34,0.34 0 0 1 -0.13,0.18 0.31,0.31 0 0 1 -0.21,0.07 H 4.69 A 0.31,0.31 0 0 1 4.48,12.86 0.34,0.34 0 0 1 4.35,12.66 Z"
+           id="path522" />
+      </g>
+      <path
+         class="undefined"
+         fill-rule="evenodd"
+         d="M 4.35,12.06 2.86,7.12 A 0.37,0.37 0 0 1 2.86,6.91 0.35,0.35 0 0 1 3,6.74 0.31,0.31 0 0 1 3.2,6.67 a 0.3,0.3 0 0 1 0.21,0 L 6.27,8.55 H 6.41 6.55 A 0.31,0.31 0 0 0 6.68,8.49 0.48,0.48 0 0 0 6.77,8.38 L 8.69,4.94 A 0.4,0.4 0 0 1 8.82,4.81 0.37,0.37 0 0 1 9,4.81 0.36,0.36 0 0 1 9.31,4.99 l 1.91,3.48 a 0.52,0.52 0 0 0 0.1,0.11 0.31,0.31 0 0 0 0.13,0.06 h 0.14 0.13 l 2.89,-1.83 a 0.3,0.3 0 0 1 0.21,0 0.31,0.31 0 0 1 0.2,0.07 0.35,0.35 0 0 1 0.12,0.17 0.38,0.38 0 0 1 0,0.21 l -1.49,4.94 a 0.34,0.34 0 0 1 -0.13,0.18 0.31,0.31 0 0 1 -0.21,0.07 H 4.69 A 0.31,0.31 0 0 1 4.48,12.38 0.34,0.34 0 0 1 4.35,12.06 Z"
+         id="path526" />
+    </g>
+    <g
+       id="draw_white"
+       transform="matrix(0.7349537,0,0,0.7349537,26.458332,0)">
+      <path
+         class="icon-shadow"
+         opacity="0.3"
+         d="m 9,0.5 a 9,9 0 1 0 9,9 9,9 0 0 0 -9,-9 z"
+         id="path70" />
+      <circle
+         class="icon-background"
+         fill="#f8f8f8"
+         cx="9"
+         cy="9"
+         r="8.5"
+         id="circle72" />
+      <path
+         class="icon-component-shadow"
+         fill="#e8e8e8"
+         d="M 9,1 A 8,8 0 1 1 1,9 8,8 0 0 1 9,1 M 9,0 A 9,9 0 1 0 18,9 9,9 0 0 0 9,0 Z"
+         id="path74" />
+      <path
+         d="M 2.92,6.61 V 5.44 c 0.81,0 1.75,-0.28 1.8,-1.22 h 1.42 v 5.5 H 4.34 V 6.61 Z M 11.79,4.22 7,13.48 H 5 L 9.8,4.22 Z m -1.94,9.26 c -0.08,-1.54 1.38,-2.19 2.57,-2.89 0.33,-0.17 0.78,-0.4 0.78,-0.78 a 0.66,0.66 0 0 0 -0.68,-0.7 c -0.69,0 -0.94,0.58 -0.92,1.16 H 10 a 2.17,2.17 0 0 1 0.64,-1.79 2.74,2.74 0 0 1 1.91,-0.62 c 1.55,0 2.45,0.52 2.45,1.74 0,1.82 -2.66,2.18 -2.66,2.5 h 2.73 v 1.38 z"
+         id="path76" />
+    </g>
+    <g
+       id="g92"
+       transform="matrix(0.73495369,0,0,0.73495369,79.374997,0)">
+      <path
+         class="icon-shadow"
+         opacity="0.3"
+         d="m 9,0.5 a 9,9 0 1 0 9,9 9,9 0 0 0 -9,-9 z"
+         id="path74-3" />
+      <circle
+         class="icon-background"
+         fill="#f8f8f8"
+         cx="9"
+         cy="9"
+         r="8.5"
+         id="circle76" />
+      <path
+         class="icon-component-shadow"
+         fill="#e8e8e8"
+         d="M 9,1 A 8,8 0 1 1 1,9 8,8 0 0 1 9,1 M 9,0 A 9,9 0 1 0 18,9 9,9 0 0 0 9,0 Z"
+         id="path78" />
+      <path
+         d="M 8.57,6.76 8.11,9.48 9,10.34 9.89,9.48 9.45,6.76 Z M 9,12.36 A 3.35,3.35 0 1 1 12.36,9 3.34,3.34 0 0 1 9,12.36 Z M 9.7,4.07 V 3.62 h 0.82 V 2.29 h -3 V 3.62 H 8.3 v 0.45 a 5,5 0 1 0 1.4,0 z"
+         id="path80" />
+    </g>
+    <g
+       id="resign_black"
+       transform="matrix(0.73495369,0,0,0.73495369,66.145831,0)">
+      <path
+         class="icon-shadow"
+         opacity="0.3"
+         d="m 9,0.5 a 9,9 0 1 0 9,9 9,9 0 0 0 -9,-9 z"
+         id="path149" />
+      <path
+         class="icon-background"
+         fill="#312e2b"
+         d="M 9,0 A 9,9 0 1 0 18,9 9,9 0 0 0 9,0 Z"
+         id="path151" />
+      <g
+         id="g157">
+        <path
+           d="M 4.94,6.34 H 4.89 A 0.63,0.63 0 0 0 4.45,7.11 l 2.16,8.09 a 0.63,0.63 0 0 0 0.77,0.45 v 0 A 0.62,0.62 0 0 0 7.82,14.89 L 5.7,6.78 A 0.62,0.62 0 0 0 4.94,6.34 Z"
+           id="path153" />
+        <path
+           d="M 12.33,4.48 C 10.33,6.77 8.5,4.07 6.33,6 a 0.54,0.54 0 0 0 -0.15,0.25 0.48,0.48 0 0 0 0,0.29 c 0.22,0.89 0.87,3.3 1.12,4.15 a 0.15,0.15 0 0 0 0.26,0.07 c 1.92,-2.65 4,0.27 6.11,-1.69 a 0.46,0.46 0 0 0 0.12,-0.44 c -0.21,-0.78 -0.8,-3 -1.1,-4.05 -0.07,-0.14 -0.27,-0.22 -0.36,-0.1 z"
+           id="path155" />
+      </g>
+      <g
+         id="g163">
+        <path
+           class="icon-component-shadow"
+           fill="#ffffff"
+           d="M 4.94,5.74 H 4.89 A 0.63,0.63 0 0 0 4.45,6.51 l 2.16,8.09 a 0.63,0.63 0 0 0 0.77,0.45 v 0 A 0.62,0.62 0 0 0 7.82,14.29 L 5.7,6.18 A 0.62,0.62 0 0 0 4.94,5.74 Z"
+           id="path159" />
+        <path
+           class="icon-component-shadow"
+           fill="#ffffff"
+           d="m 12.33,3.88 c -2,2.29 -3.83,-0.41 -6,1.52 a 0.54,0.54 0 0 0 -0.15,0.25 0.48,0.48 0 0 0 0,0.29 c 0.22,0.89 0.87,3.3 1.12,4.15 a 0.15,0.15 0 0 0 0.26,0.07 c 1.92,-2.65 4,0.27 6.11,-1.69 A 0.46,0.46 0 0 0 13.76,8 C 13.55,7.22 12.96,5 12.66,4 12.62,3.84 12.42,3.76 12.33,3.88 Z"
+           id="path161" />
+      </g>
+    </g>
+    <g
+       id="resign_white"
+       transform="matrix(0.73495369,0,0,0.73495369,52.916665,0)">
+      <g
+         id="g290">
+        <path
+           class="icon-shadow"
+           opacity="0.3"
+           d="m 9,0.5 a 9,9 0 1 0 9,9 9,9 0 0 0 -9,-9 z"
+           id="path280" />
+        <circle
+           class="icon-background"
+           fill="#f8f8f8"
+           cx="9"
+           cy="9"
+           r="8.5"
+           id="circle282" />
+        <g
+           id="g288">
+          <path
+             d="M 4.94,5.74 H 4.89 A 0.63,0.63 0 0 0 4.45,6.51 l 2.16,8.09 a 0.63,0.63 0 0 0 0.77,0.45 v 0 A 0.62,0.62 0 0 0 7.82,14.29 L 5.7,6.18 A 0.62,0.62 0 0 0 4.94,5.74 Z"
+             id="path284" />
+          <path
+             d="m 12.33,3.88 c -2,2.29 -3.83,-0.41 -6,1.52 a 0.54,0.54 0 0 0 -0.15,0.25 0.48,0.48 0 0 0 0,0.29 c 0.22,0.89 0.87,3.3 1.12,4.15 a 0.15,0.15 0 0 0 0.26,0.07 c 1.92,-2.65 4,0.27 6.11,-1.69 A 0.46,0.46 0 0 0 13.76,8 C 13.55,7.22 12.96,5 12.66,4 12.62,3.84 12.42,3.76 12.33,3.88 Z"
+             id="path286" />
+        </g>
+      </g>
+      <path
+         class="icon-component-shadow"
+         fill="#e8e8e8"
+         d="M 9,1 A 8,8 0 1 1 1,9 8,8 0 0 1 9,1 M 9,0 A 9,9 0 1 0 18,9 9,9 0 0 0 9,0 Z"
+         id="path292" />
+    </g>
+    <g
+       id="g373"
+       transform="matrix(0.73495368,0,0,0.73495368,92.604163,0)">
+      <path
+         class="icon-shadow"
+         opacity="0.3"
+         d="m 9,0.5 a 9,9 0 1 0 9,9 9,9 0 0 0 -9,-9 z"
+         id="path355" />
+      <path
+         class="icon-background"
+         fill="#312e2b"
+         d="M 9,0 A 9,9 0 1 0 18,9 9,9 0 0 0 9,0 Z"
+         id="path357" />
+      <path
+         d="M 8.57,7.26 8.11,10 9,10.86 9.89,10 9.45,7.26 Z M 9,12.86 A 3.35,3.35 0 1 1 12.36,9.5 3.34,3.34 0 0 1 9,12.86 Z M 9.7,4.57 V 4.12 h 0.82 V 2.79 h -3 V 4.12 H 8.3 v 0.45 a 5,5 0 1 0 1.4,0 z"
+         id="path359" />
+      <path
+         class="icon-component-shadow"
+         fill="#ffffff"
+         d="M 8.57,6.76 8.11,9.48 9,10.34 9.89,9.48 9.45,6.76 Z M 9,12.36 A 3.35,3.35 0 1 1 12.36,9 3.34,3.34 0 0 1 9,12.36 Z M 9.7,4.07 V 3.62 h 0.82 V 2.29 h -3 V 3.62 H 8.3 v 0.45 a 5,5 0 1 0 1.4,0 z"
+         id="path361" />
+    </g>
+  </g>
+</svg>

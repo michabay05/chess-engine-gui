@@ -24,7 +24,6 @@ const DARK_SQ_CLR: Color = Color::new(238, 238, 210, 255);
 const DARK_SELECTED_CLR: Color = Color::new(244, 246, 128, 255);
 
 fn draw_board(d: &mut RaylibDrawHandle, sec: &Rectangle, b_ui: &BoardUI) {
-    assert!(sec.width == sec.height);
     let mut cell_size = Vector2::one();
     cell_size.scale(sec.width / 8.0);
 
@@ -61,6 +60,42 @@ fn draw_board(d: &mut RaylibDrawHandle, sec: &Rectangle, b_ui: &BoardUI) {
     }
 }
 
+fn draw_coords(d: &mut RaylibDrawHandle, font: &Font, sec: &Rectangle) {
+    // File markings
+    let sq_size = sec.width / 8.0;
+    for f in 0..8 {
+        // row(r) = 7
+        let text_color = if (7+f) % 2 != 0 { DARK_SQ_CLR } else { LIGHT_SQ_CLR };
+        d.draw_text_ex(
+            font,
+            &format!("{}", (b'a' + f) as char),
+            Vector2::new(
+                sec.x + f as f32 * sq_size + (sq_size * 0.8),
+                sec.y + 0.96*sec.height
+            ),
+            font.baseSize as f32 * 0.5,
+            0.0,
+            text_color
+        );
+    }
+    // Row markings
+    for r in 0..8 {
+        // file(f) = 0
+        let text_color = if (r+0) % 2 != 0 { DARK_SQ_CLR } else { LIGHT_SQ_CLR };
+        d.draw_text_ex(
+            font,
+            &format!("{}", 8-r),
+            Vector2::new(
+                sec.x + 0.01*sec.width,
+                sec.x + r as f32 * sq_size + (sq_size * 0.2),
+            ),
+            font.baseSize as f32 * 0.5,
+            0.0,
+            text_color
+        );
+    }
+}
+
 fn draw_piece(d: &mut RaylibDrawHandle, tex: &Texture2D, target: Rectangle, piece: Piece) {
     let (color, kind) = Piece::to_tuple(Some(piece));
     let source_rect = Rectangle::new(
@@ -92,6 +127,65 @@ fn piece_rect_on_board(sec: &Rectangle, sq: usize) -> Rectangle {
         cell_size.x,
         cell_size.y
     )
+}
+
+fn draw_markers(d: &mut RaylibDrawHandle, board: &Board, tex: &Texture2D, sec: &Rectangle, game_state: GameState) {
+    let light_king = board.pos.piece[Piece::LK as usize].lsb();
+    let dark_king = board.pos.piece[Piece::DK as usize].lsb();
+    let tex_ind = match game_state {
+        GameState::LightWinByCheckmate => Some((0, 1)),
+        GameState::DarkWinByCheckmate => Some((1, 0)),
+        GameState::Ongoing => None,
+        _ => Some((2, 3))
+    };
+    if tex_ind.is_none() { return; }
+    let (l_ind, d_ind) = tex_ind.unwrap();
+    // This texture has 8 icons in it so each 'frame' has a width of 1/8 of the total width
+    let frame_width = tex.width() as f32 / 8.0;
+    let l_source_rect = Rectangle {
+        x: l_ind as f32 * frame_width,
+        y: 0.0,
+        width: frame_width,
+        height: tex.height() as f32
+    };
+    let target_width = (sec.width / 8.0) * 0.4;
+    let target_height = tex.height() as f32 * target_width/frame_width;
+    let l_target_rect = Rectangle {
+        x: sec.x + ((COL!(light_king) + 1) as f32 * sec.width / 8.0) - target_width / 2.0,
+        y: sec.y + (ROW!(light_king) as f32 * sec.height / 8.0) - target_height / 2.0,
+        width: target_width,
+        height: target_height
+    };
+    d.draw_texture_pro(
+        &tex,
+        l_source_rect,
+        l_target_rect,
+        Vector2::zero(),
+        0.0,
+        Color::WHITE,
+    );
+
+    let d_source_rect = Rectangle {
+        x: d_ind as f32 * frame_width,
+        y: 0.0,
+        width: frame_width,
+        height: tex.height() as f32
+    };
+    let target_height = tex.height() as f32 * target_width/frame_width;
+    let d_target_rect = Rectangle {
+        x: sec.x + ((COL!(dark_king) + 1) as f32 * sec.width / 8.0) - target_width / 2.0,
+        y: sec.y + (ROW!(dark_king) as f32 * sec.height / 8.0) - target_height / 2.0,
+        width: target_width,
+        height: target_height
+    };
+    d.draw_texture_pro(
+        &tex,
+        d_source_rect,
+        d_target_rect,
+        Vector2::zero(),
+        0.0,
+        Color::WHITE,
+    );
 }
 
 fn move_is_legal(board: &Board, attack_info: &AttackInfo, source: Sq, target: Sq, promoted: Option<Piece>) -> Option<Move> {
@@ -234,11 +328,37 @@ enum GameState {
     DrawByStalemate,
     DrawByFiftyMoveRule,
     DrawByThreefoldRepetition,
-    DrawByKingVsKing,
-    // TODO: missing draw by other insufficient material
-    //       - KN vs k
-    //       - KB vs k
-    //       - KB vs kb: same color bishops
+    DrawByInsufficientMaterial,
+}
+
+fn insufficient_material(b: &Board) -> bool {
+    if b.pos.units[0].count_ones() == 1 && b.pos.units[1].count_ones() == 1 {
+        // K vs k
+        return true;
+    }
+    if (b.pos.units[0].count_ones() == 2 && b.pos.piece[1].count_ones() == 1 && b.pos.units[1].count_ones() == 1)
+        || (b.pos.units[1].count_ones() == 2 && b.pos.piece[7].count_ones() == 1 && b.pos.units[0].count_ones() == 1)
+    {
+        // (KN vs k) and (K vs kn)
+        return true;
+    }
+    if b.pos.units[0].count_ones() == 2 && b.pos.piece[1].count_ones() == 1
+        && b.pos.units[1].count_ones() == 2 && b.pos.piece[7].count_ones() == 1 {
+        // KN vs kn
+        return true;
+    }
+    if b.pos.units[0].count_ones() == 2 && b.pos.piece[2].count_ones() == 1
+        && b.pos.units[1].count_ones() == 2 && b.pos.piece[8].count_ones() == 1 {
+        // KB vs kb
+        let white_bishop = b.pos.piece[2].lsb();
+        let (wr, wf) = (ROW!(white_bishop), COL!(white_bishop));
+        let black_bishop = b.pos.piece[8].lsb();
+        let (br, bf) = (ROW!(black_bishop), COL!(black_bishop));
+        // If both bishops are the same color and there are only 1 bishops per side,
+        // it's a draw due to insufficient material
+        return (wr + wf) % 2 == (br + bf) % 2;
+    }
+    false
 }
 
 fn update_game_state(board: &mut Board, attack_info: &AttackInfo, zobrist_info: &ZobristInfo, boards: &Vec<BoardInfo>) -> GameState {
@@ -246,8 +366,8 @@ fn update_game_state(board: &mut Board, attack_info: &AttackInfo, zobrist_info: 
     // units[1] -> all the black pieces
     // Since kings can't be captured, if both sides only have one piece
     // then that means that only kings are left on the board
-    if board.pos.units[0].count_ones() == 1 && board.pos.units[1].count_ones() == 1 {
-        return GameState::DrawByKingVsKing;
+    if insufficient_material(&board) {
+        return GameState::DrawByInsufficientMaterial;
     }
     if board.state.half_moves >= 100 {
         return GameState::DrawByFiftyMoveRule;
@@ -395,6 +515,45 @@ impl BoardInfo {
     }
 }
 
+
+fn draw_players_name(d: &mut RaylibDrawHandle, font: &Font, sec: &Rectangle, light_name: &str, dark_name: &str) {
+    let margin = Vector2::new(sec.width * 0.01, sec.height * 0.03);
+
+    let white_text_dim = text::measure_text_ex(font, light_name, font.baseSize as f32, 0.0);
+    let black_text_dim = text::measure_text_ex(font, dark_name, font.baseSize as f32, 0.0);
+    let larger_x = f32::max(white_text_dim.x, black_text_dim.x);
+
+    let rect_width = f32::max(sec.width * 0.3, larger_x * 1.35);
+    let rect_height = f32::max(rect_width * 0.35, font.baseSize as f32 * 1.35);
+    let light_bkgd_rect = Rectangle {
+        x: sec.x + (sec.width - margin.x) * 0.225 - rect_width / 2.0,
+        y: sec.y + margin.y + 0.1 * (sec.height - margin.y),
+        width: rect_width,
+        height: rect_height
+    };
+    let dark_bkgd_rect = Rectangle {
+        x: (sec.x + sec.width) - (sec.width - margin.x) * 0.225 - rect_width / 2.0,
+        y: light_bkgd_rect.y,
+        width: light_bkgd_rect.width,
+        height: light_bkgd_rect.height
+    };
+    d.draw_rectangle_rec(light_bkgd_rect, Color::WHITE);
+    d.draw_rectangle_lines_ex(dark_bkgd_rect, 3, Color::WHITE);
+
+    d.draw_text_ex(&font, light_name,
+        Vector2::new(
+            light_bkgd_rect.x + light_bkgd_rect.width / 2.0 - (white_text_dim.x / 2.0),
+            light_bkgd_rect.y + light_bkgd_rect.height / 2.0 - (white_text_dim.y / 2.0)
+        ),
+        font.baseSize as f32, 0.0, BACKGROUND);
+    d.draw_text_ex(&font, dark_name,
+        Vector2::new(
+            dark_bkgd_rect.x + dark_bkgd_rect.width / 2.0 - (black_text_dim.x / 2.0),
+            dark_bkgd_rect.y + dark_bkgd_rect.height / 2.0 - (black_text_dim.y / 2.0)
+        ),
+        font.baseSize as f32, 0.0, Color::WHITE);
+}
+
 const SECONDS_PER_MOVE: f32 = 1.0;
 
 pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<(), String> {
@@ -428,18 +587,21 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
     println!("[INFO] {} vs {}", engine_a.name(), engine_b.name());
 
     let (mut rl, thread) = raylib::init()
-        .size(900, 600)
+        .size(1000, 600)
         .title("Chess Engine GUI")
-        .resizable()
+        // .resizable()
         .build();
 
-    rl.set_window_min_size(900, 600);
+    rl.set_window_min_size(1000, 600);
     rl.set_target_fps(60);
 
     let piece_tex = rl.load_texture(&thread, "assets/pieceSpriteSheet.png")?;
     piece_tex.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
+    let game_end_tex = rl.load_texture(&thread, "assets/game-end-icons.png")?;
+    game_end_tex.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
 
     let font = rl.load_font(&thread, "assets/fonts/Inter-Regular.ttf")?;
+    let bold_font = rl.load_font(&thread, "assets/fonts/Inter-Bold.ttf")?;
 
     // Handle player input
     let mut selected = None;
@@ -455,7 +617,7 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
 
     let original_fen = FEN_POSITIONS[2];
     let mut fen = String::from(original_fen);
-    fen = String::from("r4k2/p1pp3Q/1n4p1/3p4/5N2/2PB4/P4rqP/2K1R3 b - - 3 16");
+    fen = String::from("2K5/8/8/1q2k3/8/8/8/8 w - - 0 1");
     let mut b_ui = BoardUI::from(&Board::from_fen(&fen, &zobrist_info));
 
     let mut history = Vec::<BoardInfo>::new();
@@ -584,17 +746,6 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         // update_player(&rl, &mut board, &attack_info, &boundary, &promoted_boundary, &mut selected, &mut target,
         //     &mut is_promotion, &mut promoted_piece);
 
-        fn redraw_anim(d: &mut RaylibDrawHandle, boundary: &Rectangle, tex: &Texture2D, mv: Move, t: f32) {
-            let source_rect = piece_rect_on_board(boundary, mv.source() as usize);
-            let target_rect = piece_rect_on_board(boundary, mv.target() as usize);
-            let piece = mv.piece();
-            let source_vec = Vector2::new(source_rect.x, source_rect.y);
-            let target_vec = Vector2::new(target_rect.x, target_rect.y);
-            let anim_pos = source_vec.lerp(target_vec, t as f32);
-            let anim_rect = Rectangle::new(anim_pos.x, anim_pos.y, source_rect.width, source_rect.height);
-            draw_piece(d, tex, anim_rect, piece);
-        }
-
         if selected.is_some() && target.is_some() && !is_promotion {
             // DEBUG INFO
             // println!("Going to make move, here's the info:");
@@ -610,7 +761,9 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
                     if let Some(b_info) = history.last_mut() {
                         b_info.update(mv, game_state);
                     }
-                    history.push(BoardInfo::from(&b_ui));
+                    if game_state == GameState::Ongoing {
+                        history.push(BoardInfo::from(&b_ui));
+                    }
                     index += 1;
 
 
@@ -637,6 +790,7 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         d.clear_background(BACKGROUND);
         draw_board(&mut d, &boundary, &b_ui);
         let skip_sq = if index == history.len() - 1 { b_ui.selected } else { None };
+        draw_coords(&mut d, &bold_font, &boundary);
         draw_pieces(&mut d, skip_sq, &piece_tex, &b_ui, &boundary);
 
         fn draw_pieces(d: &mut RaylibDrawHandle, skip_sq: Option<usize>, tex: &Texture2D, b_ui: &BoardUI, sec: &Rectangle) {
@@ -655,6 +809,17 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
             }
         }
 
+        fn redraw_anim(d: &mut RaylibDrawHandle, boundary: &Rectangle, tex: &Texture2D, mv: Move, t: f32) {
+            let source_rect = piece_rect_on_board(boundary, mv.source() as usize);
+            let target_rect = piece_rect_on_board(boundary, mv.target() as usize);
+            let piece = mv.piece();
+            let source_vec = Vector2::new(source_rect.x, source_rect.y);
+            let target_vec = Vector2::new(target_rect.x, target_rect.y);
+            let anim_pos = source_vec.lerp(target_vec, t as f32);
+            let anim_rect = Rectangle::new(anim_pos.x, anim_pos.y, source_rect.width, source_rect.height);
+            draw_piece(d, tex, anim_rect, piece);
+        }
+
         if let Some(mv) = anim_mv {
             // anim_t = (NOW - anim_start_time) / ANIM_DURATION_SECS;
             let elapsed = Instant::now().duration_since(anim_start_time);
@@ -664,7 +829,7 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
                 anim_mv = None;
                 b_ui.board = anim_target_board.unwrap();
                 anim_target_board = None;
-                // Instantly make the move
+                // Instantly make the move by drawing the target board
                 draw_pieces(&mut d, None, &piece_tex, &b_ui, &boundary);
             }
 
@@ -672,8 +837,11 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
                 redraw_anim(&mut d, &boundary, &piece_tex, mv, anim_t);
             }
         }
-        // ================= NOTE: this instantly draws all the piece on the board
-        // draw_pieces(&mut d, &piece_tex, &b_ui.board, &boundary);
+
+        if game_state != GameState::Ongoing {
+            draw_markers(&mut d, &b_ui.board, &game_end_tex, &boundary, game_state);
+        }
+
         if is_promotion {
             d.draw_rectangle_rec(promoted_boundary, PROMOTION_BACKGROUND);
             let color = b_ui.board.state.side as usize;
@@ -706,11 +874,12 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         d.draw_text_ex(&font, &side_to_move_text, Vector2::new(850.0, 600.0), font.baseSize as f32, 0.0, Color::WHITE);
         d.draw_rectangle_lines_ex(right_boundary, 1, Color::RED);
 
-        let players = &format!("{} vs {}", engine_a.name(), engine_b.name());
+        /* let players = &format!("{} vs {}", engine_a.name(), engine_b.name());
         let text_dim = measure_text_ex(&font, &players, font.baseSize as f32, 0.0);
         d.draw_text_ex(&font, &players,
-            Vector2::new(right_boundary.x + (right_boundary.width / 2.0) - (text_dim.x / 2.0), right_boundary.height * 0.2),
-            font.baseSize as f32, 0.0, Color::WHITE);
+        Vector2::new(right_boundary.x + (right_boundary.width / 2.0) - (text_dim.x / 2.0), right_boundary.height * 0.2),
+        font.baseSize as f32, 0.0, Color::WHITE); */
+        draw_players_name(&mut d, &font, &right_boundary, engine_a.name(), engine_b.name());
 
         let eval_text = if !is_mate {
             format!("{}{}",
@@ -720,11 +889,7 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         } else {
             format!("mate {}", eval)
         };
-        // d.draw_text(&eval_text, 750, 500, 30, Color::WHITE);
         d.draw_text_ex(&font, &eval_text, Vector2::new(750.0, 500.0), font.baseSize as f32, 0.0, Color::WHITE);
-        d.draw_text_ex(&font, &format!("{:?}", game_state), Vector2::new(800.0, 400.0), font.baseSize as f32, 0.0, Color::WHITE);
-
-        d.draw_fps(800, 580);
     }
 
     Ok(())
