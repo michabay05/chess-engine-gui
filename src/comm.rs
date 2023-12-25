@@ -144,6 +144,7 @@ impl EngineComm {
     pub fn best_move(&mut self, eval: &mut i32, is_mate: &mut bool) -> Option<String> {
         let mut buf = String::new();
         if let Some(ind) = self.read_until_rmatch("bestmove", &mut buf) {
+            /*
             let mut is_cp = true;
             let mut last_score = buf.rfind("cp");
             if last_score.is_none() {
@@ -157,7 +158,8 @@ impl EngineComm {
                 let length = if *is_mate { 4 } else { 2 };
                 let substr = &buf[(score_ind + length)..].trim();
                 let space = substr.find(char::is_whitespace).unwrap();
-                let eval_str = &substr[..space];
+                let eval_str = substr[..space].trim();
+                println!("eval_str = '{}'", eval_str);
                 if let Ok(val) = eval_str.parse::<i32>() {
                     *eval = val;
                 } else {
@@ -166,6 +168,7 @@ impl EngineComm {
                     panic!();
                 }
             }
+            */
 
             let best_move = &buf[(ind+8)..].trim_start();
             Some(best_move[0..5].trim().to_string())

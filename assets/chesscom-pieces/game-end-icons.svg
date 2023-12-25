@@ -2,9 +2,9 @@
 <!-- Created with Inkscape (http://www.inkscape.org/) -->
 
 <svg
-   width="400"
+   width="445"
    height="52.083332"
-   viewBox="0 0 105.83333 13.780381"
+   viewBox="0 0 117.73957 13.780381"
    version="1.1"
    id="svg5"
    inkscape:export-filename="/home/michabay/Documents/chess-engine-gui/assets/game-end-icons.png"
@@ -37,8 +37,8 @@
      fit-margin-right="0"
      fit-margin-bottom="0"
      inkscape:zoom="1.842284"
-     inkscape:cx="166.36958"
-     inkscape:cy="34.739487"
+     inkscape:cx="99.876023"
+     inkscape:cy="34.739486"
      inkscape:window-width="1366"
      inkscape:window-height="723"
      inkscape:window-x="0"
@@ -47,7 +47,7 @@
      inkscape:current-layer="layer1"
      height="14.78038mm"
      units="px"
-     width="400px" />
+     width="445px" />
   <defs
      id="defs2" />
   <g
@@ -56,7 +56,7 @@
      id="layer1">
     <g
        id="draw_black"
-       transform="matrix(0.7349537,0,0,0.7349537,39.687499,0)">
+       transform="matrix(0.7349537,0,0,0.7349537,44.979164,0)">
       <path
          class="icon-shadow"
          opacity="0.3"
@@ -78,7 +78,7 @@
     </g>
     <g
        id="checkmate_black"
-       transform="matrix(0.7349537,0,0,0.7349537,13.229166,0.183738)">
+       transform="matrix(0.7349537,0,0,0.7349537,15.874999,0.183738)">
       <path
          class="icon-shadow"
          opacity="0.3"
@@ -100,7 +100,7 @@
     </g>
     <g
        id="winner"
-       transform="scale(0.7349537)">
+       transform="matrix(0.7349537,0,0,0.7349537,1.3229166,0)">
       <g
          id="g520">
         <path
@@ -131,7 +131,7 @@
     </g>
     <g
        id="draw_white"
-       transform="matrix(0.7349537,0,0,0.7349537,26.458332,0)">
+       transform="matrix(0.7349537,0,0,0.7349537,30.427082,0)">
       <path
          class="icon-shadow"
          opacity="0.3"
@@ -155,7 +155,7 @@
     </g>
     <g
        id="g92"
-       transform="matrix(0.73495369,0,0,0.73495369,79.374997,0)">
+       transform="matrix(0.73495369,0,0,0.73495369,88.635411,0)">
       <path
          class="icon-shadow"
          opacity="0.3"
@@ -179,7 +179,7 @@
     </g>
     <g
        id="resign_black"
-       transform="matrix(0.73495369,0,0,0.73495369,66.145831,0)">
+       transform="matrix(0.73495369,0,0,0.73495369,74.083329,0)">
       <path
          class="icon-shadow"
          opacity="0.3"
@@ -215,7 +215,7 @@
     </g>
     <g
        id="resign_white"
-       transform="matrix(0.73495369,0,0,0.73495369,52.916665,0)">
+       transform="matrix(0.73495369,0,0,0.73495369,59.531247,0)">
       <g
          id="g290">
         <path
@@ -248,7 +248,7 @@
     </g>
     <g
        id="g373"
-       transform="matrix(0.73495368,0,0,0.73495368,92.604163,0)">
+       transform="matrix(0.73495368,0,0,0.73495368,103.1875,0)">
       <path
          class="icon-shadow"
          opacity="0.3"
