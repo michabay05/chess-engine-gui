@@ -1,7 +1,7 @@
 use raylib::prelude::*;
 
 use crate::attack::AttackInfo;
-use crate::bb::{BB, BBUtil};
+use crate::bb::BBUtil;
 use crate::board::Board;
 use crate::comm::EngineComm;
 use crate::consts::{Piece, PieceColor, PieceType, Sq};
@@ -313,6 +313,12 @@ fn insufficient_material(b: &Board) -> bool {
         // (KN vs k) and (K vs kn)
         return true;
     }
+    if (b.pos.units[0].count_ones() == 2 && b.pos.piece[2].count_ones() == 1 && b.pos.units[1].count_ones() == 1)
+        || (b.pos.units[1].count_ones() == 2 && b.pos.piece[8].count_ones() == 1 && b.pos.units[0].count_ones() == 1)
+    {
+        // (KB vs k) and (K vs kb)
+        return true;
+    }
     if b.pos.units[0].count_ones() == 2 && b.pos.piece[1].count_ones() == 1
         && b.pos.units[1].count_ones() == 2 && b.pos.piece[7].count_ones() == 1 {
         // KN vs kn
@@ -442,7 +448,26 @@ impl BoardInfo {
 fn draw_players_name(d: &mut RaylibDrawHandle, font: &Font, sec: &Rectangle, light_name: &str, dark_name: &str) {
     let margin = Vector2::new(sec.width * 0.01, sec.height * 0.03);
 
-    let white_text_dim = text::measure_text_ex(font, light_name, font.baseSize as f32, 0.0);
+    let text = &format!("{}   vs    {}", light_name, dark_name);
+    let text_dim = text::measure_text_ex(font, text, font.baseSize as f32, 0.0);
+
+    let rect_width = f32::max(sec.width * 0.9, 1.5*text_dim.x);
+    let rect_height = text_dim.y * 1.65;
+    let bkgd_rect = Rectangle {
+        x: sec.x + (sec.width - margin.x) / 2.0 - rect_width / 2.0,
+        y: sec.y + margin.y + 0.05 * (sec.height - margin.y),
+        width: rect_width,
+        height: rect_height
+    };
+
+    d.draw_rectangle_lines_ex(bkgd_rect, 3, Color::RAYWHITE);
+    let text_pos = Vector2::new(
+        bkgd_rect.x + bkgd_rect.width/2.0 - text_dim.x/2.0,
+        bkgd_rect.y + bkgd_rect.height/2.0 - text_dim.y/2.0,
+    );
+    d.draw_text_ex(&font, text, text_pos, font.baseSize as f32, 0.0, Color::RAYWHITE);
+
+    /* let white_text_dim = text::measure_text_ex(font, light_name, font.baseSize as f32, 0.0);
     let black_text_dim = text::measure_text_ex(font, dark_name, font.baseSize as f32, 0.0);
     let larger_x = f32::max(white_text_dim.x, black_text_dim.x);
 
@@ -450,7 +475,7 @@ fn draw_players_name(d: &mut RaylibDrawHandle, font: &Font, sec: &Rectangle, lig
     let rect_height = f32::max(rect_width * 0.35, font.baseSize as f32 * 1.35);
     let light_bkgd_rect = Rectangle {
         x: sec.x + (sec.width - margin.x) * 0.225 - rect_width / 2.0,
-        y: sec.y + margin.y + 0.1 * (sec.height - margin.y),
+        y: sec.y + margin.y + 0.05 * (sec.height - margin.y),
         width: rect_width,
         height: rect_height
     };
@@ -474,10 +499,8 @@ fn draw_players_name(d: &mut RaylibDrawHandle, font: &Font, sec: &Rectangle, lig
             dark_bkgd_rect.x + dark_bkgd_rect.width / 2.0 - (black_text_dim.x / 2.0),
             dark_bkgd_rect.y + dark_bkgd_rect.height / 2.0 - (black_text_dim.y / 2.0)
         ),
-        font.baseSize as f32, 0.0, Color::WHITE);
+        font.baseSize as f32, 0.0, Color::WHITE); */
 }
-
-const SECONDS_PER_MOVE: f32 = 0.75;
 
 struct GUI {
     selected: Option<Sq>,
@@ -509,7 +532,12 @@ struct GUI {
     // Sections on the screen
     board_sec: Rectangle,
     promotion_sec: Rectangle,
-    info_sec: Rectangle
+    info_sec: Rectangle,
+
+    move_list_sec: Rectangle,
+    move_list_rect: Rectangle,
+    curr_move_rect: Rectangle,
+    follow_move_list: bool,
 }
 
 impl GUI {
@@ -521,6 +549,7 @@ impl GUI {
         let board = Board::from_fen(fen, zobrist_info);
         let current = BoardUI::from(&board);
         let history = vec![BoardInfo::from(&current)];
+
         Self {
             selected: None,
             target: None,
@@ -548,7 +577,24 @@ impl GUI {
             board_sec: Rectangle::default(),
             promotion_sec: Rectangle::default(),
             info_sec: Rectangle::default(),
+
+            move_list_sec: Rectangle::default(),
+            move_list_rect: Rectangle::default(),
+            curr_move_rect: Rectangle::default(),
+            follow_move_list: false,
         }
+    }
+
+    fn init_sections(&mut self, width: i32, height: i32) {
+        self.update_sections(Vector2::new(width as f32, height as f32));
+        let height = 0.5*self.info_sec.height;
+        self.move_list_sec = Rectangle {
+            x: self.info_sec.x + 0.05*self.info_sec.width,
+            y: self.info_sec.y + height,
+            width: self.info_sec.width * 0.9,
+            height: self.info_sec.height - height
+        };
+        self.move_list_rect = self.move_list_sec;
     }
 
     fn update_sections(&mut self, size: Vector2) {
@@ -575,6 +621,15 @@ impl GUI {
             width: size.x - (self.board_sec.x + self.board_sec.width + 2.0*margin.x),
             height: min_side,
         };
+        let height = 0.5*self.info_sec.height;
+        self.move_list_sec = Rectangle {
+            x: self.info_sec.x + 0.05*self.info_sec.width,
+            y: self.info_sec.y + height,
+            width: self.info_sec.width * 0.9,
+            height: self.info_sec.height - height
+        };
+        self.move_list_rect.x = self.info_sec.x + 0.05*self.info_sec.width;
+        self.move_list_rect.width = self.move_list_sec.width;
     }
 
     fn update_state(&mut self, attack_info: &AttackInfo, zobrist_info: &ZobristInfo) {
@@ -646,6 +701,7 @@ impl GUI {
         self.anim_target_board = Some(self.current.board.clone());
         if let Some(mv) = curr_move {
             if moves::make(self.anim_target_board.as_mut().unwrap(), attack_info, zobrist_info, mv, MoveFlag::AllMoves) {
+                is_legal = true;
                 self.current_fen = fen::gen_fen(self.anim_target_board.as_ref().unwrap());
                 if let Some(b_info) = self.history.last_mut() {
                     b_info.update(mv, self.state);
@@ -665,7 +721,6 @@ impl GUI {
                 self.anim_mv = Some(mv);
                 self.anim_start_time = Instant::now();
                 self.is_animating = true;
-                is_legal = true;
             } else {
                 eprintln!("[ERROR] Illegal move! {}", mv.to_str());
                 is_legal = false;
@@ -707,6 +762,61 @@ impl GUI {
     }
 }
 
+// TODO: move list scrolling glitch is in this function
+fn draw_moves(s: &mut impl RaylibDraw, sec: &mut Rectangle, font: &Font, moves: &Vec<BoardInfo>, current: usize) -> Rectangle {
+    let mut move_counter = 1;
+    let mut x;
+    let mut y = 0.0;
+    let gap = font.baseSize as f32 * 1.5;
+    let each_height = font.baseSize as f32 * 2.0;
+    let mut draw_bkgd = false;
+    let mut curr_move_rect = Rectangle::default();
+    // [ (move number) (gap 1) (white's move) (gap 2) (black's move) ]
+    // [ (   0.05    ) ( 0.2 ) (   0.325    ) ( 0.1 ) (   0.325    ) ]
+    for (i, b_info) in moves.iter().enumerate() {
+        let mv = b_info.mv;
+        if mv.is_none() { break; }
+        let mv = mv.unwrap().to_str();
+        let mv = mv.trim();
+
+        if i % 2 == 0 {
+            y = sec.y + (each_height * (i as f32)/2.0) + gap;
+            if draw_bkgd {
+                s.draw_rectangle_rec(
+                    Rectangle::new(sec.x, y - (each_height - gap), sec.width, each_height),
+                    MOVELIST_LIGHT_BKGD
+                );
+            }
+            draw_bkgd = !draw_bkgd;
+
+            x = sec.x + (0.05*sec.width);
+            s.draw_text_ex(font, &move_counter.to_string(), Vector2::new(x, y),
+                font.baseSize as f32, 0.0, Color::GRAY);
+            move_counter += 1;
+
+            if (y + each_height) - sec.y > sec.height {
+                sec.height += gap;
+            }
+            x = sec.x + 0.25*sec.width;
+        } else {
+            x = sec.x + 0.675*sec.width;
+        }
+        if i == current - 1 {
+            let text_dim = text::measure_text_ex(font, mv, font.baseSize as f32, 0.0);
+            let (pad_horz, pad_vert) = (0.75*text_dim.x, 0.5*text_dim.y);
+            curr_move_rect = Rectangle::new(x - pad_horz/2.0, y - pad_vert/2.0, text_dim.x + pad_horz, text_dim.y + pad_vert);
+            s.draw_rectangle_rounded(curr_move_rect, 0.2, 10, Color::DARKGRAY);
+        }
+        s.draw_text_ex(font, mv, Vector2::new(x, y), font.baseSize as f32, 0.0, Color::RAYWHITE);
+    }
+    curr_move_rect
+}
+
+const SECONDS_PER_MOVE: f32 = 0.75;
+
+const MOVELIST_LIGHT_BKGD: Color = Color::new(28, 28, 28, 255);
+const MOVELIST_DARK_BKGD: Color = Color::new(22, 22, 22, 255);
+
 pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<(), String> {
     let attack_info = AttackInfo::new();
     let zobrist_info = ZobristInfo::new();
@@ -740,22 +850,24 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
     let (mut rl, thread) = raylib::init()
         .size(1000, 600)
         .title("Chess Engine GUI")
-        // .resizable()
+        .resizable()
+        // .msaa_4x()
         .build();
 
     rl.set_window_min_size(1000, 600);
     rl.set_target_fps(60);
 
-    // let piece_tex = rl.load_texture(&thread, "assets/chesscom-pieces/chesscom_pieces.png")?;
-    let piece_tex = rl.load_texture(&thread, "assets/lichess-pieces/cburnett_pieces.png")?;
-    piece_tex.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_TRILINEAR);
+    let piece_tex = rl.load_texture(&thread, "assets/chesscom-pieces/chesscom_pieces.png")?;
+    piece_tex.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
     let game_end_tex = rl.load_texture(&thread, "assets/chesscom-pieces/game-end-icons.png")?;
     game_end_tex.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
 
     let font = rl.load_font(&thread, "assets/fonts/Inter-Regular.ttf")?;
+    let move_list_font = rl.load_font_ex(&thread, "assets/fonts/Inter-Medium.ttf", 20, FontLoadEx::Default(0))?;
     let bold_font = rl.load_font(&thread, "assets/fonts/Inter-Bold.ttf")?;
 
     let mut gui = GUI::new(&zobrist_info);
+    gui.init_sections(rl.get_screen_width(), rl.get_screen_height());
 
     let mut is_engine_a = true;
 
@@ -764,9 +876,31 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         let size = Vector2::new(rl.get_screen_width() as f32, rl.get_screen_height() as f32);
         gui.update_sections(size);
 
+        let wheel_move = rl.get_mouse_wheel_move();
+        gui.move_list_rect.y += wheel_move * 100.0;
+
+        
+        if gui.follow_move_list {
+            if gui.curr_move_rect.y + gui.curr_move_rect.height < gui.move_list_sec.y {
+                gui.move_list_rect.y += gui.move_list_sec.height;
+            }
+            if gui.curr_move_rect.y + gui.curr_move_rect.height > gui.move_list_sec.y + gui.move_list_sec.height {
+                gui.move_list_rect.y -= gui.move_list_sec.height;
+            }
+        }
+
+        if gui.move_list_rect.y + (gui.move_list_rect.height - gui.move_list_sec.height) < gui.move_list_sec.y {
+            gui.move_list_rect.y = gui.move_list_sec.y - (gui.move_list_rect.height - gui.move_list_sec.height);
+        }
+        
+        if gui.move_list_rect.y > gui.move_list_sec.y {
+            gui.move_list_rect.y = gui.move_list_sec.y;
+        }
+
         if rl.is_key_pressed(KeyboardKey::KEY_SPACE) {
             if gui.current_index == gui.history.len() - 1 {
                 gui.play_game = !gui.play_game;
+                gui.follow_move_list = gui.play_game;
             } else {
                 eprintln!(
                     "[WARN] The board must be at the current position. You are {} moves behind the current.",
@@ -829,6 +963,7 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
 
         if gui.play_game && gui.state != GameState::Ongoing {
             gui.play_game = false;
+            gui.follow_move_list = gui.play_game;
         }
 
         if gui.play_game {
@@ -949,7 +1084,16 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         }
 
         draw_players_name(&mut d, &font, &gui.info_sec, engine_a.name(), engine_b.name());
-    }
 
+        let mut s = d.begin_scissor_mode(
+            gui.move_list_sec.x as i32,
+            gui.move_list_sec.y as i32,
+            gui.move_list_sec.width as i32,
+            gui.move_list_sec.height as i32,
+        );
+        gui.curr_move_rect = draw_moves(&mut s, &mut gui.move_list_rect, &move_list_font, &gui.history, gui.current_index);
+        s.draw_rectangle_lines_ex(gui.move_list_sec, 3, Color::RAYWHITE);
+    }
+    
     Ok(())
 }

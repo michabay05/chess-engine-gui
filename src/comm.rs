@@ -1,6 +1,5 @@
 use std::process::{Command, Child, ChildStdin, ChildStdout, Stdio};
 use std::io::{Write, Read};
-use std::thread;
 use std::time::Duration;
 
 pub struct EngineComm {

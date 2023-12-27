@@ -11,10 +11,7 @@ mod move_gen;
 mod moves;
 mod zobrist;
 
-use std::process::Command;
-use std::io::{Write, Read};
 use std::env;
-use std::path::Path;
 
 fn main() {
     let mut args = env::args();
