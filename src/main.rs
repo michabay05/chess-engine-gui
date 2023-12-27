@@ -1,15 +1,5 @@
-mod attack;
-mod bb;
-mod board;
-mod comm;
-mod consts;
-mod fen;
-mod gui_main;
-mod magic_consts;
-mod magics;
-mod move_gen;
-mod moves;
-mod zobrist;
+mod chess;
+mod gui;
 
 use std::env;
 
@@ -26,7 +16,7 @@ fn main() {
     let engine_a = args.next();
     let engine_b = args.next();
 
-    if let Err(e) = gui_main::gui_main(engine_a.unwrap(), engine_b) {
+    if let Err(e) = gui::gui_main(engine_a.unwrap(), engine_b) {
         eprintln!("[ERROR] Something went wrong!");
         eprintln!("[ERROR] {e}");
     }
