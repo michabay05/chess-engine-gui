@@ -1,6 +1,7 @@
 use raylib::prelude::*;
 
 use crate::comm::EngineComm;
+use crate::utils::Button;
 
 use chess::attack::AttackInfo;
 use chess::bb::BBUtil;
@@ -467,40 +468,56 @@ fn draw_players_name(d: &mut RaylibDrawHandle, font: &Font, sec: &Rectangle, lig
         bkgd_rect.y + bkgd_rect.height/2.0 - text_dim.y/2.0,
     );
     d.draw_text_ex(&font, text, text_pos, font.baseSize as f32, 0.0, Color::RAYWHITE);
+}
 
-    /* let white_text_dim = text::measure_text_ex(font, light_name, font.baseSize as f32, 0.0);
-    let black_text_dim = text::measure_text_ex(font, dark_name, font.baseSize as f32, 0.0);
-    let larger_x = f32::max(white_text_dim.x, black_text_dim.x);
+fn draw_moves(s: &mut impl RaylibDraw, sec: &mut Rectangle, font: &Font, moves: &Vec<BoardInfo>, current: usize) -> Rectangle {
+    let mut move_counter = 1;
+    let mut x;
+    let mut y = 0.0;
+    let gap = font.baseSize as f32 * 1.5;
+    let each_height = font.baseSize as f32 * 2.0;
+    let mut draw_bkgd = false;
+    let mut curr_move_rect = Rectangle::default();
+    // [ (move number) (gap 1) (white's move) (gap 2) (black's move) ]
+    // [ (   0.05    ) ( 0.2 ) (   0.325    ) ( 0.1 ) (   0.325    ) ]
+    for (i, b_info) in moves.iter().enumerate() {
+        let mv = b_info.mv;
+        if mv.is_none() { break; }
+        let mv = mv.unwrap().to_str();
+        let mv = mv.trim();
 
-    let rect_width = f32::max(sec.width * 0.3, larger_x * 1.35);
-    let rect_height = f32::max(rect_width * 0.35, font.baseSize as f32 * 1.35);
-    let light_bkgd_rect = Rectangle {
-        x: sec.x + (sec.width - margin.x) * 0.225 - rect_width / 2.0,
-        y: sec.y + margin.y + 0.05 * (sec.height - margin.y),
-        width: rect_width,
-        height: rect_height
-    };
-    let dark_bkgd_rect = Rectangle {
-        x: (sec.x + sec.width) - (sec.width - margin.x) * 0.225 - rect_width / 2.0,
-        y: light_bkgd_rect.y,
-        width: light_bkgd_rect.width,
-        height: light_bkgd_rect.height
-    };
-    d.draw_rectangle_rec(light_bkgd_rect, Color::WHITE);
-    d.draw_rectangle_lines_ex(dark_bkgd_rect, 3, Color::WHITE);
+        if i % 2 == 0 {
+            y = sec.y + (each_height * (i as f32)/2.0) + gap;
+            if draw_bkgd {
+                s.draw_rectangle_rec(
+                    Rectangle::new(sec.x, y - (each_height - gap), sec.width, each_height),
+                    MOVELIST_LIGHT_BKGD
+                );
+            }
+            draw_bkgd = !draw_bkgd;
 
-    d.draw_text_ex(&font, light_name,
-        Vector2::new(
-            light_bkgd_rect.x + light_bkgd_rect.width / 2.0 - (white_text_dim.x / 2.0),
-            light_bkgd_rect.y + light_bkgd_rect.height / 2.0 - (white_text_dim.y / 2.0)
-        ),
-        font.baseSize as f32, 0.0, BACKGROUND);
-    d.draw_text_ex(&font, dark_name,
-        Vector2::new(
-            dark_bkgd_rect.x + dark_bkgd_rect.width / 2.0 - (black_text_dim.x / 2.0),
-            dark_bkgd_rect.y + dark_bkgd_rect.height / 2.0 - (black_text_dim.y / 2.0)
-        ),
-        font.baseSize as f32, 0.0, Color::WHITE); */
+            x = sec.x + (0.05*sec.width);
+            s.draw_text_ex(font, &move_counter.to_string(), Vector2::new(x, y),
+                font.baseSize as f32, 0.0, Color::GRAY);
+            move_counter += 1;
+
+            if (y + each_height) - sec.y > sec.height {
+                sec.height += gap;
+            }
+            x = sec.x + 0.25*sec.width;
+        } else {
+            x = sec.x + 0.675*sec.width;
+        }
+        let curr_ind = current.saturating_sub(1);
+        if i == curr_ind {
+            let text_dim = text::measure_text_ex(font, mv, font.baseSize as f32, 0.0);
+            let (pad_horz, pad_vert) = (0.75*text_dim.x, 0.5*text_dim.y);
+            curr_move_rect = Rectangle::new(x - pad_horz/2.0, y - pad_vert/2.0, text_dim.x + pad_horz, text_dim.y + pad_vert);
+            s.draw_rectangle_rounded(curr_move_rect, 0.2, 10, Color::DARKGRAY);
+        }
+        s.draw_text_ex(font, mv, Vector2::new(x, y), font.baseSize as f32, 0.0, Color::RAYWHITE);
+    }
+    curr_move_rect
 }
 
 struct GUI {
@@ -518,6 +535,8 @@ struct GUI {
     original_fen: String,
     current_fen: String,
     current: BoardUI,
+    other: BoardUI,
+    other_index: usize,
     state: GameState,
     // History of moves and board
     history: Vec<BoardInfo>,
@@ -549,6 +568,7 @@ impl GUI {
     fn from_fen(fen: &str, zobrist_info: &ZobristInfo) -> Self {
         let board = Board::from_fen(fen, zobrist_info);
         let current = BoardUI::from(&board);
+        let other = current.clone();
         let history = vec![BoardInfo::from(&current)];
 
         Self {
@@ -564,6 +584,8 @@ impl GUI {
             original_fen: String::from(fen),
             current_fen: String::from(fen),
             current,
+            other,
+            other_index: 0,
             state: GameState::Ongoing,
 
             history,
@@ -587,19 +609,13 @@ impl GUI {
     }
 
     fn init_sections(&mut self, width: i32, height: i32) {
-        self.update_sections(Vector2::new(width as f32, height as f32));
-        let height = 0.5*self.info_sec.height;
-        self.move_list_sec = Rectangle {
-            x: self.info_sec.x + 0.05*self.info_sec.width,
-            y: self.info_sec.y + height,
-            width: self.info_sec.width * 0.9,
-            height: self.info_sec.height - height
-        };
+        let size = Vector2::new(width as f32, height as f32);
+        let margin = Vector2::new(size.x * 0.01, size.y * 0.03);
+        self.update_sections(size, margin);
         self.move_list_rect = self.move_list_sec;
     }
 
-    fn update_sections(&mut self, size: Vector2) {
-        let margin = Vector2::new(size.x * 0.01, size.y * 0.03);
+    fn update_sections(&mut self, size: Vector2, margin: Vector2) {
         let min_side = f32::min((size.x - 2.0*margin.x) * 0.7, size.y - 2.0*margin.y);
         self.board_sec = Rectangle {
             x: margin.x,
@@ -624,13 +640,41 @@ impl GUI {
         };
         let height = 0.5*self.info_sec.height;
         self.move_list_sec = Rectangle {
-            x: self.info_sec.x + 0.05*self.info_sec.width,
+            x: self.info_sec.x,
             y: self.info_sec.y + height,
-            width: self.info_sec.width * 0.9,
+            width: self.info_sec.width,
             height: self.info_sec.height - height
         };
-        self.move_list_rect.x = self.info_sec.x + 0.05*self.info_sec.width;
-        self.move_list_rect.width = self.move_list_sec.width;
+        self.move_list_rect = Rectangle {
+            y: self.move_list_rect.y,
+            height: self.move_list_rect.height,
+            ..self.move_list_sec
+        };
+    }
+
+    fn handle_scrolling(&mut self, rl: &RaylibHandle) {
+        let wheel_move = rl.get_mouse_wheel_move();
+        self.move_list_rect.y += wheel_move * 100.0;
+
+        let sec = &mut self.move_list_sec;
+        let rect = &mut self.move_list_rect;
+
+        if self.follow_move_list {
+            if self.curr_move_rect.y + self.curr_move_rect.height < sec.y {
+                rect.y += sec.height;
+            }
+            if self.curr_move_rect.y + self.curr_move_rect.height > sec.y + sec.height {
+                rect.y -= sec.height;
+            }
+        }
+
+        if rect.y + (rect.height - sec.height) < sec.y {
+            rect.y = sec.y - (rect.height - sec.height);
+        }
+
+        if rect.y > sec.y {
+            rect.y = sec.y;
+        }
     }
 
     fn update_state(&mut self, attack_info: &AttackInfo, zobrist_info: &ZobristInfo) {
@@ -712,7 +756,15 @@ impl GUI {
                 } else {
                     println!("Game ended by {:?}", self.state);
                 }
-                self.current_index += 1;
+                self.current_index = self.history.len() - 1;
+                self.other_index = self.current_index;
+
+                // TO BE REMOVED
+                self.other = BoardUI {
+                    board: self.anim_target_board.clone().unwrap().clone(),
+                    ..self.current.clone()
+                };
+                // =======================================
 
                 let b = self.anim_target_board.as_ref().unwrap();
                 if b.is_in_check(attack_info, b.state.xside) {
@@ -761,63 +813,109 @@ impl GUI {
             }
         }
     }
-}
 
-// TODO: move list scrolling glitch is in this function
-fn draw_moves(s: &mut impl RaylibDraw, sec: &mut Rectangle, font: &Font, moves: &Vec<BoardInfo>, current: usize) -> Rectangle {
-    let mut move_counter = 1;
-    let mut x;
-    let mut y = 0.0;
-    let gap = font.baseSize as f32 * 1.5;
-    let each_height = font.baseSize as f32 * 2.0;
-    let mut draw_bkgd = false;
-    let mut curr_move_rect = Rectangle::default();
-    // [ (move number) (gap 1) (white's move) (gap 2) (black's move) ]
-    // [ (   0.05    ) ( 0.2 ) (   0.325    ) ( 0.1 ) (   0.325    ) ]
-    for (i, b_info) in moves.iter().enumerate() {
-        let mv = b_info.mv;
-        if mv.is_none() { break; }
-        let mv = mv.unwrap().to_str();
-        let mv = mv.trim();
-
-        if i % 2 == 0 {
-            y = sec.y + (each_height * (i as f32)/2.0) + gap;
-            if draw_bkgd {
-                s.draw_rectangle_rec(
-                    Rectangle::new(sec.x, y - (each_height - gap), sec.width, each_height),
-                    MOVELIST_LIGHT_BKGD
-                );
-            }
-            draw_bkgd = !draw_bkgd;
-
-            x = sec.x + (0.05*sec.width);
-            s.draw_text_ex(font, &move_counter.to_string(), Vector2::new(x, y),
-                font.baseSize as f32, 0.0, Color::GRAY);
-            move_counter += 1;
-
-            if (y + each_height) - sec.y > sec.height {
-                sec.height += gap;
-            }
-            x = sec.x + 0.25*sec.width;
-        } else {
-            x = sec.x + 0.675*sec.width;
+    fn go_to_start(&mut self) {
+        if !self.play_game {
+            self.other_index = 0;
+            self.other = self.history[self.other_index].b_ui.clone();
         }
-        let curr_ind = current.saturating_sub(1);
-        if i == curr_ind {
-            let text_dim = text::measure_text_ex(font, mv, font.baseSize as f32, 0.0);
-            let (pad_horz, pad_vert) = (0.75*text_dim.x, 0.5*text_dim.y);
-            curr_move_rect = Rectangle::new(x - pad_horz/2.0, y - pad_vert/2.0, text_dim.x + pad_horz, text_dim.y + pad_vert);
-            s.draw_rectangle_rounded(curr_move_rect, 0.2, 10, Color::DARKGRAY);
-        }
-        s.draw_text_ex(font, mv, Vector2::new(x, y), font.baseSize as f32, 0.0, Color::RAYWHITE);
     }
-    curr_move_rect
+
+    fn go_to_current(&mut self) {
+        if !self.play_game {
+            self.other_index = self.current_index;
+            self.other = BoardUI {
+                board: self.current.board.clone(),
+                ..self.history[self.other_index].b_ui.clone()
+            };
+        }
+    }
+
+    fn go_to_first_move(&mut self) {
+        if !self.play_game {
+            self.other_index = 1;
+            self.other = BoardUI {
+                board: self.history[self.other_index + 1].b_ui.board.clone(),
+                ..self.history[self.other_index].b_ui.clone()
+            };
+        }
+    }
+
+    fn undo_move(&mut self) {
+        if !self.play_game {
+            if self.other_index == 1 {
+                self.go_to_first_move();
+                return;
+            } else if self.other_index == 0 {
+                self.go_to_start();
+                return;
+            }
+            println!("[UNDO] current_index = {}", self.current_index);
+            println!("[UNDO] other_index = {}\n", self.other_index);
+            self.other = BoardUI {
+                board: self.history[self.other_index].b_ui.board.clone(),
+                ..self.history[self.other_index - 1].b_ui.clone()
+            };
+            self.other_index = self.other_index.saturating_sub(1);
+        }
+    }
+
+    fn forward_move(&mut self) {
+        if !self.play_game {
+            if self.other_index >= self.history.len() - 2 {
+                self.go_to_current();
+                return;
+            }
+            self.other_index += 1;
+            println!("[FORW] current_index = {}", self.current_index);
+            println!("[FORW] other_index = {}\n", self.other_index);
+            self.other = BoardUI {
+                board: self.history[self.other_index + 1].b_ui.board.clone(),
+                ..self.history[self.other_index].b_ui.clone()
+            };
+        }
+    }
+
+    fn play(&mut self) {
+        if self.current_index == self.history.len() - 1 {
+            self.play_game = true;
+            self.follow_move_list = true;
+        } else {
+            self.current_index = self.history.len() - 1;
+            self.toggle_play();
+        }
+    }
+
+    fn pause(&mut self) {
+        if self.play_game {
+            self.play_game = false;
+            self.follow_move_list = false;
+        }
+    }
+
+    fn toggle_play(&mut self) {
+        if self.play_game {
+            self.pause();
+        } else {
+            self.play();
+        }
+    }
 }
 
 const SECONDS_PER_MOVE: f32 = 0.75;
 
 const MOVELIST_LIGHT_BKGD: Color = Color::new(28, 28, 28, 255);
 const MOVELIST_DARK_BKGD: Color = Color::new(22, 22, 22, 255);
+const MOVE_BTN_COLOR: Color = Color::new(48, 48, 48, 255);
+
+#[derive(Clone, Debug)]
+enum MoveButtonType {
+    First,
+    Previous,
+    PlayPause,
+    Next,
+    Last
+}
 
 pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<(), String> {
     let attack_info = AttackInfo::new();
@@ -853,7 +951,7 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         .size(1000, 600)
         .title("Chess Engine GUI")
         .resizable()
-        // .msaa_4x()
+        .msaa_4x()
         .build();
 
     rl.set_window_min_size(1000, 600);
@@ -863,6 +961,8 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
     piece_tex.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
     let game_end_tex = rl.load_texture(&thread, "assets/chesscom-pieces/game-end-icons.png")?;
     game_end_tex.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
+    let btn_icons = rl.load_texture(&thread, "assets/btn-icons.png")?;
+    btn_icons.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
 
     let font = rl.load_font(&thread, "assets/fonts/Inter-Regular.ttf")?;
     let move_list_font = rl.load_font_ex(&thread, "assets/fonts/Inter-Medium.ttf", 20, FontLoadEx::Default(0))?;
@@ -875,61 +975,59 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
 
     while !rl.window_should_close() {
         /* ==================== UPDATE PHASE ==================== */
+        let mouse_pos = rl.get_mouse_position();
         let size = Vector2::new(rl.get_screen_width() as f32, rl.get_screen_height() as f32);
-        gui.update_sections(size);
+        let margin = Vector2::new(size.x * 0.01, size.y * 0.03);
+        gui.update_sections(size, margin);
+        gui.handle_scrolling(&rl);
 
-        let wheel_move = rl.get_mouse_wheel_move();
-        gui.move_list_rect.y += wheel_move * 100.0;
+        let sec = gui.info_sec;
+        let sec_margin = sec.width * 0.05;
+        let width = (sec.width - 2.0*sec_margin) / 6.5;
+        let height = f32::min(60.0, sec.height * 0.1);
+        let y = gui.move_list_sec.y - margin.x - height;
+        let mut move_btns = [
+            Button::padded_content(MoveButtonType::First, Rectangle {
+                x: sec.x + sec_margin, y, width, height
+            }, MOVE_BTN_COLOR),
+            Button::padded_content(MoveButtonType::Previous, Rectangle {
+                x: sec.x + sec_margin + sec_margin + width, y, width, height
+            }, MOVE_BTN_COLOR),
+            Button::padded_content(MoveButtonType::PlayPause, Rectangle {
+                x: sec.x + sec_margin + 2.0*(sec_margin + width), y, width, height
+            }, MOVE_BTN_COLOR),
+            Button::padded_content(MoveButtonType::Next, Rectangle {
+                x: sec.x + sec_margin + 3.0*(sec_margin + width), y, width, height
+            }, MOVE_BTN_COLOR),
+            Button::padded_content(MoveButtonType::Last, Rectangle {
+                x: sec.x + sec_margin + 4.0*(sec_margin + width), y, width, height
+            }, MOVE_BTN_COLOR),
+        ];
 
-        
-        if gui.follow_move_list {
-            if gui.curr_move_rect.y + gui.curr_move_rect.height < gui.move_list_sec.y {
-                gui.move_list_rect.y += gui.move_list_sec.height;
+        for btn in &move_btns {
+            if btn.is_clicked(&rl) {
+                match btn.kind() {
+                    MoveButtonType::First => gui.go_to_start(),
+                    MoveButtonType::Previous => gui.undo_move(),
+                    MoveButtonType::PlayPause => gui.toggle_play(),
+                    MoveButtonType::Next => gui.forward_move(),
+                    MoveButtonType::Last => gui.go_to_current(),
+                }
             }
-            if gui.curr_move_rect.y + gui.curr_move_rect.height > gui.move_list_sec.y + gui.move_list_sec.height {
-                gui.move_list_rect.y -= gui.move_list_sec.height;
-            }
-        }
-
-        if gui.move_list_rect.y + (gui.move_list_rect.height - gui.move_list_sec.height) < gui.move_list_sec.y {
-            gui.move_list_rect.y = gui.move_list_sec.y - (gui.move_list_rect.height - gui.move_list_sec.height);
-        }
-        
-        if gui.move_list_rect.y > gui.move_list_sec.y {
-            gui.move_list_rect.y = gui.move_list_sec.y;
         }
 
         if rl.is_key_pressed(KeyboardKey::KEY_SPACE) {
-            if gui.current_index == gui.history.len() - 1 {
-                gui.play_game = !gui.play_game;
-                gui.follow_move_list = gui.play_game;
-            } else {
-                eprintln!(
-                    "[WARN] The board must be at the current position. You are {} moves behind the current.",
-                    (gui.history.len() - 1) - gui.current_index
-                );
-            }
+            gui.toggle_play();
+        } else if rl.is_key_pressed(KeyboardKey::KEY_ONE) {
+            gui.go_to_first_move();
         } else if rl.is_key_pressed(KeyboardKey::KEY_LEFT) {
-            if !gui.play_game {
-                gui.current_index = gui.current_index.saturating_sub(1);
-                gui.current = gui.history[gui.current_index].b_ui.clone();
-            }
+            gui.undo_move();
         } else if rl.is_key_pressed(KeyboardKey::KEY_RIGHT) {
-            if !gui.play_game {
-                gui.current_index += 1;
-                if gui.current_index >= gui.history.len() { gui.current_index = gui.history.len() - 1; };
-                gui.current = gui.history[gui.current_index].b_ui.clone();
-            }
+            gui.forward_move();
         } else if rl.is_key_pressed(KeyboardKey::KEY_UP) {
-            if !gui.play_game {
-                gui.current_index = 0;
-                gui.current = gui.history[gui.current_index].b_ui.clone();
-            }
+            gui.go_to_start();
         } else if rl.is_key_pressed(KeyboardKey::KEY_DOWN) {
-            if !gui.play_game {
-                gui.current_index = gui.history.len() - 1;
-                gui.current = gui.history[gui.current_index].b_ui.clone();
-            }
+            gui.go_to_current();
         } else if rl.is_key_pressed(KeyboardKey::KEY_F) {
             let current_fen = fen::gen_fen(&gui.current.board);
             if rl.set_clipboard_text(&current_fen).is_err() {
@@ -958,14 +1056,13 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
             }
         }
 
-        // game_state = update_game_state(&mut b_ui.board, &attack_info, &zobrist_info, &gui.history);
         if gui.state == GameState::Ongoing {
             gui.update_state(&attack_info, &zobrist_info);
         }
 
         if gui.play_game && gui.state != GameState::Ongoing {
             gui.play_game = false;
-            gui.follow_move_list = gui.play_game;
+            gui.follow_move_list = false;
         }
 
         if gui.play_game {
@@ -1000,13 +1097,12 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         /* ==================== RENDER PHASE ==================== */
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(BACKGROUND);
-        draw_board(&mut d, &gui.board_sec, &gui.current);
+        let b_ui = if gui.play_game { &gui.current } else { &gui.other };
+        draw_board(&mut d, &gui.board_sec, b_ui);
         draw_coords(&mut d, &bold_font, &gui.board_sec);
-        let skip_sq = if gui.current_index == gui.history.len() - 1 {
-            gui.current.selected
-        } else { None };
+        let skip_sq = if gui.current_index == gui.history.len() - 1 { b_ui.selected } else { None };
         // let skip_sq = gui.history[gui.current_index].b_ui.selected;
-        draw_pieces(&mut d, skip_sq, &piece_tex, &gui.current, &gui.board_sec);
+        draw_pieces(&mut d, skip_sq, &piece_tex, b_ui, &gui.board_sec);
 
         fn draw_pieces(d: &mut RaylibDrawHandle, skip_sq: Option<Sq>, tex: &Texture2D, b_ui: &BoardUI, sec: &Rectangle) {
             for r in 0..8 {
@@ -1087,14 +1183,40 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
 
         draw_players_name(&mut d, &font, &gui.info_sec, engine_a.name(), engine_b.name());
 
-        let mut s = d.begin_scissor_mode(
-            gui.move_list_sec.x as i32,
-            gui.move_list_sec.y as i32,
-            gui.move_list_sec.width as i32,
-            gui.move_list_sec.height as i32,
-        );
-        gui.curr_move_rect = draw_moves(&mut s, &mut gui.move_list_rect, &move_list_font, &gui.history, gui.current_index);
-        s.draw_rectangle_lines_ex(gui.move_list_sec, 3, Color::RAYWHITE);
+        {
+            let mut s = d.begin_scissor_mode(
+                gui.move_list_sec.x as i32,
+                gui.move_list_sec.y as i32,
+                gui.move_list_sec.width as i32,
+                gui.move_list_sec.height as i32,
+            );
+            gui.curr_move_rect = draw_moves(&mut s, &mut gui.move_list_rect, &move_list_font, &gui.history, gui.other_index);
+            s.draw_rectangle_lines_ex(gui.move_list_sec, 3, Color::RAYWHITE);
+        }
+
+        d.draw_rectangle_lines_ex(gui.info_sec, 2, Color::RED);
+
+        for btn in &move_btns {
+            btn.draw(&mut d, mouse_pos);
+            let min_side = f32::min(btn.content_rect().width, btn.content_rect().height);
+            let target = Rectangle {
+                x: btn.content_rect().x + btn.content_rect().width / 2.0 - min_side / 2.0,
+                y: btn.content_rect().y + btn.content_rect().height / 2.0 - min_side / 2.0,
+                width: min_side,
+                height: min_side,
+            };
+            let frame_width = btn_icons.width() as f32 / 3.0;
+            let (ind, center, rotation) = match *btn.kind() {
+                MoveButtonType::First => (2, Vector2::zero(), 0.0),
+                MoveButtonType::Previous => (1, Vector2::zero(), 0.0),
+                MoveButtonType::PlayPause => (0, Vector2::zero(), 0.0),
+                MoveButtonType::Next => (1, Vector2::new(target.width, target.height), 180.0),
+                MoveButtonType::Last => (2, Vector2::new(target.width, target.height), 180.0),
+            };
+            let source = Rectangle::new(ind as f32*frame_width, 0.0, frame_width, btn_icons.height() as f32);
+            d.draw_texture_pro(&btn_icons, source, target, center, rotation, Color::WHITE);
+        }
+        d.draw_fps((0.95*size.x) as i32, (0.95*size.y) as i32);
     }
     
     Ok(())

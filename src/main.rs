@@ -1,4 +1,5 @@
 mod gui;
+mod utils;
 mod comm;
 
 use std::env;
