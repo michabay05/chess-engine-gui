@@ -1,5 +1,5 @@
-mod chess;
 mod gui;
+mod comm;
 
 use std::env;
 

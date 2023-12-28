@@ -1,15 +1,16 @@
 use raylib::prelude::*;
 
-use crate::chess::attack::AttackInfo;
-use crate::chess::bb::BBUtil;
-use crate::chess::board::Board;
-use super::comm::EngineComm;
-use crate::chess::consts::{Piece, PieceColor, PieceType, Sq};
-use crate::chess::fen::{self, FEN_POSITIONS};
-use crate::chess::moves::{self, Move, MoveFlag, MoveUtil};
-use crate::chess::move_gen::{self, MoveList};
-use crate::chess::zobrist::ZobristInfo;
-use crate::{COL, ROW, SQ};
+use crate::comm::EngineComm;
+
+use chess::attack::AttackInfo;
+use chess::bb::BBUtil;
+use chess::board::Board;
+use chess::consts::{Piece, PieceColor, PieceType, Sq};
+use chess::fen::{self, FEN_POSITIONS};
+use chess::moves::{self, Move, MoveFlag, MoveUtil};
+use chess::move_gen::{self, MoveList};
+use chess::zobrist::ZobristInfo;
+use chess::{COL, ROW, SQ};
 
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
@@ -154,8 +155,8 @@ fn draw_markers(d: &mut RaylibDrawHandle, board: &Board, tex: &Texture2D, sec: &
     let target_width = (sec.width / 8.0) * 0.4;
     let target_height = tex.height() as f32 * target_width/frame_width;
     let l_target_rect = Rectangle {
-        x: sec.x + ((COL!(light_king) + 1) as f32 * sec.width / 8.0) - target_width / 2.0,
-        y: sec.y + (ROW!(light_king) as f32 * sec.height / 8.0) - target_height / 2.0,
+        x: sec.x + (COL!(light_king) as f32 * sec.width / 8.0) + (0.9 * sec.width / 8.0) - target_width / 2.0,
+        y: sec.y + (ROW!(light_king) as f32 * sec.height / 8.0) + (0.05 * sec.height / 8.0) - target_height / 2.0,
         width: target_width,
         height: target_height
     };
@@ -176,8 +177,8 @@ fn draw_markers(d: &mut RaylibDrawHandle, board: &Board, tex: &Texture2D, sec: &
     };
     let target_height = tex.height() as f32 * target_width/frame_width;
     let d_target_rect = Rectangle {
-        x: sec.x + ((COL!(dark_king) + 1) as f32 * sec.width / 8.0) - target_width / 2.0,
-        y: sec.y + (ROW!(dark_king) as f32 * sec.height / 8.0) - target_height / 2.0,
+        x: sec.x + (COL!(dark_king) as f32 * sec.width / 8.0) + (0.9 * sec.width / 8.0) - target_width / 2.0,
+        y: sec.y + (ROW!(dark_king) as f32 * sec.height / 8.0) + (0.05 * sec.height / 8.0) - target_height / 2.0,
         width: target_width,
         height: target_height
     };
@@ -801,7 +802,8 @@ fn draw_moves(s: &mut impl RaylibDraw, sec: &mut Rectangle, font: &Font, moves: 
         } else {
             x = sec.x + 0.675*sec.width;
         }
-        if i == current - 1 {
+        let curr_ind = current.saturating_sub(1);
+        if i == curr_ind {
             let text_dim = text::measure_text_ex(font, mv, font.baseSize as f32, 0.0);
             let (pad_horz, pad_vert) = (0.75*text_dim.x, 0.5*text_dim.y);
             curr_move_rect = Rectangle::new(x - pad_horz/2.0, y - pad_vert/2.0, text_dim.x + pad_horz, text_dim.y + pad_vert);

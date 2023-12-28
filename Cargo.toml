@@ -5,9 +5,14 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+name = "chess"
+path = "src/chess/lib.rs"
+crate-type = ["lib"]
+
 [[bin]]
 name = "buttons"
-path = "src/gui/buttons.rs"
+path = "src/buttons.rs"
 
 [dependencies]
 rand = "0.8.5"
