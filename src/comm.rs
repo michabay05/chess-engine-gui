@@ -143,49 +143,21 @@ impl EngineComm {
     pub fn best_move(&mut self, eval: &mut i32, is_mate: &mut bool) -> Option<String> {
         let mut buf = String::new();
         if let Some(ind) = self.read_until_rmatch("bestmove", &mut buf) {
-            /*
-            let mut is_cp = true;
-            let mut last_score = buf.rfind("cp");
-            if last_score.is_none() {
-                last_score = buf.rfind("mate");
-                *is_mate = true;
-                if last_score.is_none() {
-                    eprintln!("[WARN] Unable to parse move");
-                }
-            }
-            if let Some(score_ind) = last_score {
-                let length = if *is_mate { 4 } else { 2 };
-                let substr = &buf[(score_ind + length)..].trim();
-                let space = substr.find(char::is_whitespace).unwrap();
-                let eval_str = substr[..space].trim();
-                println!("eval_str = '{}'", eval_str);
-                if let Ok(val) = eval_str.parse::<i32>() {
-                    *eval = val;
-                } else {
-                    eprintln!("[ERROR] Couldn't parse '{}' from '{}'", eval_str, substr);
-                    eprintln!("[ERROR] buf = '{}'", buf);
-                    panic!();
-                }
-            }
-            */
+            // TODO: try to parse the last evaluation from the output produced by the engine
 
             let best_move = &buf[(ind+8)..].trim_start();
-            Some(best_move[0..5].trim().to_string())
-            /*
-            let mut word_len = buf.len() - (ind + 8);
-            if word_len > 5 { word_len = 5; }
-            // +8 for "bestmove", +1 for space
-            let mut substr = buf[(ind+8)..=(ind+8+word_len)].split_whitespace();
-            if let Some(best_move) = substr.next() {
-                let a = &buf[(ind+8)..];
-                let b = &buf[(ind+8)..(ind+8+word_len)];
-                println!("[MAIN] '{a}'");
-                println!("[ SUB] '{b}'");
-                println!("[BEST] '{best_move}'");
-                Some(best_move.trim().to_string())
-            } else {
-                None
-            }*/
+            let mut i = 0;
+            loop {
+                let mut iter = best_move.chars();
+                if let Some(ch) = iter.nth(i) {
+                    if ch.is_ascii_alphanumeric() {
+                        i += 1;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            Some(best_move[0..i].to_string())
         } else {
             None
         }

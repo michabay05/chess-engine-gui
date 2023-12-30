@@ -1,6 +1,7 @@
-mod gui;
-mod utils;
 mod comm;
+mod gui;
+mod pgn;
+mod utils;
 
 use std::env;
 

@@ -278,7 +278,11 @@ pub fn make(
                     source_castling = Sq::A8;
                     target_castling = Sq::D8;
                 },
-                _ => unreachable!("Target castling square should only be [ G1, C1 ] for white and [ G8, C8 ] for black"),
+                _ => {
+                    eprintln!("[ERROR] target_castling = {}", Sq::from_num(target));
+                    eprintln!("[ERROR] Target castling square should only be [ G1, C1 ] for white and [ G8, C8 ] for black");
+                    unreachable!();
+                },
             };
             main.pos.piece[rook_type as usize].pop(source_castling as usize);
             zobrist::update(
