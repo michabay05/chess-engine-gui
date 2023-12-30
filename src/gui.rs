@@ -2,6 +2,7 @@ use raylib::prelude::*;
 
 use crate::comm::EngineComm;
 use crate::utils::Button;
+use crate::pgn;
 
 use chess::attack::AttackInfo;
 use chess::bb::BBUtil;
@@ -13,8 +14,6 @@ use chess::move_gen::{self, MoveList};
 use chess::zobrist::ZobristInfo;
 use chess::{COL, ROW, SQ};
 
-use std::io::{self, BufWriter, Write};
-use std::path::Path;
 use std::time::Instant;
 
 const BACKGROUND: Color = Color::new(30, 30, 30, 255);
@@ -294,10 +293,12 @@ fn update_player(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum GameState {
+pub enum GameState {
     Ongoing,
     LightWinByCheckmate,
     DarkWinByCheckmate,
+    LightLostOnTime,
+    DarkLostOnTime,
     DrawByStalemate,
     DrawByFiftyMoveRule,
     DrawByThreefoldRepetition,
@@ -340,53 +341,6 @@ fn insufficient_material(b: &Board) -> bool {
     false
 }
 
-fn save_game(
-    filename: &str, engine_a_name: &str, engine_b_name: &str, fen: &str,
-    game_state: &GameState, board_info: &Vec<BoardInfo>
-) -> Result<(), io::Error> {
-    let f = std::fs::File::create(Path::new(filename))?;
-    let mut f = BufWriter::new(f);
-    writeln!(f, "[Event \"?\"]")?;
-    writeln!(f, "[Site \"?\"]")?;
-    writeln!(f, "[Date \"????.??.??\"]")?;
-    writeln!(f, "[Round \"?\"]")?;
-    writeln!(f, "[White \"{}\"]", engine_a_name)?;
-    writeln!(f, "[Black \"{}\"]", engine_b_name)?;
-    let result_str = match game_state {
-        GameState::Ongoing => "*",
-        GameState::LightWinByCheckmate => "1-0",
-        GameState::DarkWinByCheckmate => "0-1",
-        _ => "1/2-1/2"
-    };
-    writeln!(f, "[Result \"{}\"]", result_str)?;
-    writeln!(f, "[FEN \"{}\"]", fen)?;
-    writeln!(f, "[SetUp \"1\"]")?;
-    writeln!(f)?;
-
-    for (i, b_info) in board_info.iter().enumerate() {
-        if i % 2 == 0 && b_info.game_state == GameState::Ongoing {
-            write!(f, "{}. ", (i / 2) + 1)?;
-        }
-        // TODO: change move from coordinate form to short algebraic notation
-        if let Some(mv) = b_info.mv {
-            write!(f, "{}", mv.to_str().trim())?;
-        } else {
-            eprintln!("[ERROR] Couldn't find move associated with the current position");
-            b_info.b_ui.board.display();
-        }
-        // Every 5 moves from each side, add a newline
-        if i == board_info.len() - 1 {
-            writeln!(f, " {}", result_str)?;
-        } else if i != 0 && i % 10 == 0 {
-            writeln!(f)?;
-        } else {
-            write!(f, " ")?;
-        }
-    }
-
-    Ok(())
-}
-
 #[derive(Clone)]
 struct BoardUI {
     board: Board,
@@ -425,7 +379,7 @@ impl BoardUI {
     }
 }
 
-struct BoardInfo {
+pub struct BoardInfo {
     b_ui: BoardUI,
     mv: Option<Move>,
     game_state: GameState,
@@ -438,6 +392,27 @@ impl BoardInfo {
             mv: None,
             game_state: GameState::Ongoing
         }
+    }
+
+    pub fn mv(&self) -> Option<Move> {
+        self.mv.clone()
+    }
+
+    pub fn board(&self) -> &Board {
+        &self.b_ui.board
+    }
+
+    pub fn is_checkmate(&self) -> bool {
+        self.game_state == GameState::LightWinByCheckmate
+            || self.game_state == GameState::DarkWinByCheckmate
+    }
+
+    pub fn check(&self) -> bool {
+        self.b_ui.check.is_some()
+    }
+
+    pub fn is_ongoing(&self) -> bool {
+        self.game_state == GameState::Ongoing
     }
 
     fn update(&mut self, mv: Move, game_state: GameState) {
@@ -902,7 +877,7 @@ impl GUI {
     }
 }
 
-const SECONDS_PER_MOVE: f32 = 0.75;
+const SECONDS_PER_MOVE: f32 = 1.25;
 
 const MOVELIST_LIGHT_BKGD: Color = Color::new(28, 28, 28, 255);
 const MOVELIST_DARK_BKGD: Color = Color::new(22, 22, 22, 255);
@@ -968,7 +943,8 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
     let move_list_font = rl.load_font_ex(&thread, "assets/fonts/Inter-Medium.ttf", 20, FontLoadEx::Default(0))?;
     let bold_font = rl.load_font(&thread, "assets/fonts/Inter-Bold.ttf")?;
 
-    let mut gui = GUI::new(&zobrist_info);
+    // let mut gui = GUI::new(&zobrist_info);
+    let mut gui = GUI::from_fen("4r1k1/3p1p2/3p1Q2/B2P4/P1r5/6P1/5K1P/8 b - - 0 33", &zobrist_info);
     gui.init_sections(rl.get_screen_width(), rl.get_screen_height());
 
     let mut is_engine_a = true;
@@ -1050,7 +1026,7 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
             }
         } else if rl.is_key_pressed(KeyboardKey::KEY_S) {
             if !gui.play_game {
-                if save_game("game.pgn", engine_a.name(), engine_b.name(), &gui.original_fen, &gui.state, &gui.history).is_err() {
+                if pgn::save("game.pgn", engine_a.name(), engine_b.name(), &gui.original_fen, &gui.state, &attack_info, &gui.history).is_err() {
                     return Err("Couldn't save game to file 'game.pgn'".to_string());
                 }
             }
@@ -1216,7 +1192,6 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
             let source = Rectangle::new(ind as f32*frame_width, 0.0, frame_width, btn_icons.height() as f32);
             d.draw_texture_pro(&btn_icons, source, target, center, rotation, Color::WHITE);
         }
-        d.draw_fps((0.95*size.x) as i32, (0.95*size.y) as i32);
     }
     
     Ok(())
