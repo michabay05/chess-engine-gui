@@ -1,18 +1,19 @@
 use raylib::prelude::*;
 
-use crate::comm::EngineComm;
-use crate::utils::Button;
-use crate::pgn;
-
 use chess::attack::AttackInfo;
 use chess::bb::BBUtil;
 use chess::board::Board;
-use chess::consts::{Piece, PieceColor, PieceType, Sq};
-use chess::fen::{self, FEN_POSITIONS};
-use chess::moves::{self, Move, MoveFlag, MoveUtil};
+use chess::consts::{Piece, Sq};
+use chess::fen;
+use chess::moves::{Move, MoveUtil};
 use chess::move_gen::{self, MoveList};
 use chess::zobrist::ZobristInfo;
 use chess::{COL, ROW, SQ};
+
+use crate::comm::EngineComm;
+use crate::game::{Game, GameState};
+use crate::pgn;
+use crate::utils::Button;
 
 use std::time::Instant;
 
@@ -24,7 +25,8 @@ const LIGHT_SELECTED_CLR: Color = Color::new(187, 204, 68, 255);
 const DARK_SQ_CLR: Color = Color::new(238, 238, 210, 255);
 const DARK_SELECTED_CLR: Color = Color::new(244, 246, 128, 255);
 
-fn draw_board(d: &mut RaylibDrawHandle, sec: &Rectangle, b_ui: &BoardUI) {
+// TODO: display checks
+fn draw_board(d: &mut RaylibDrawHandle, sec: &Rectangle, source: Option<Sq>, target: Option<Sq>) {
     let mut cell_size = Vector2::one();
     cell_size.scale(sec.width / 8.0);
 
@@ -32,18 +34,19 @@ fn draw_board(d: &mut RaylibDrawHandle, sec: &Rectangle, b_ui: &BoardUI) {
         for f in 0..8 {
             let light_sq = (r + f) % 2 != 0;
             let mut sq_clr = if light_sq { LIGHT_SQ_CLR } else { DARK_SQ_CLR };
-            if let Some(sq) = b_ui.selected {
+            if let Some(sq) = source {
                 let sq = sq as usize;
                 if sq == SQ!(r, f) {
                     sq_clr = if (ROW!(sq) + COL!(sq)) % 2 != 0 { LIGHT_SELECTED_CLR } else { DARK_SELECTED_CLR };
                 }
             }
-            if let Some(sq) = b_ui.target {
+            if let Some(sq) = target {
                 let sq = sq as usize;
                 if sq == SQ!(r, f) {
                     sq_clr = if (ROW!(sq) + COL!(sq)) % 2 != 0 { LIGHT_SELECTED_CLR } else { DARK_SELECTED_CLR };
                 }
             }
+            /*
             if let Some(sq) = b_ui.check {
                 let sq = sq as usize;
                 if sq == SQ!(r, f) {
@@ -51,6 +54,7 @@ fn draw_board(d: &mut RaylibDrawHandle, sec: &Rectangle, b_ui: &BoardUI) {
                     sq_clr = Color::color_alpha_blend(&sq_clr, &check_clr, &Color::new(255, 255, 255, 200));
                 }
             }
+            */
 
             d.draw_rectangle_v(
                 Vector2::new(
@@ -192,18 +196,82 @@ fn draw_markers(d: &mut RaylibDrawHandle, board: &Board, tex: &Texture2D, sec: &
     );
 }
 
-fn move_is_legal(board: &Board, attack_info: &AttackInfo, source: Sq, target: Sq, promoted: Option<Piece>) -> Option<Move> {
-    let mut ml = MoveList::new();
-    let piece = board.find_piece(source as usize);
-    if piece.is_none() {
-        println!("'{}' -> '{}'", source, target);
-        board.display();
-    }
-    assert!(piece.is_some());
-    move_gen::generate_by_piece(board, attack_info, &mut ml, piece.unwrap());
-    ml.search(source, target, promoted)
+fn draw_players_name(d: &mut RaylibDrawHandle, font: &Font, sec: &Rectangle, light_name: &str, dark_name: &str) {
+    let margin = Vector2::new(sec.width * 0.01, sec.height * 0.03);
+
+    let text = &format!("{}   vs    {}", light_name, dark_name);
+    let text_dim = text::measure_text_ex(font, text, font.baseSize as f32, 0.0);
+
+    let rect_width = f32::max(sec.width * 0.9, 1.5*text_dim.x);
+    let rect_height = text_dim.y * 1.65;
+    let bkgd_rect = Rectangle {
+        x: sec.x + (sec.width - margin.x) / 2.0 - rect_width / 2.0,
+        y: sec.y + margin.y + 0.05 * (sec.height - margin.y),
+        width: rect_width,
+        height: rect_height
+    };
+
+    d.draw_rectangle_lines_ex(bkgd_rect, 3, Color::RAYWHITE);
+    let text_pos = Vector2::new(
+        bkgd_rect.x + bkgd_rect.width/2.0 - text_dim.x/2.0,
+        bkgd_rect.y + bkgd_rect.height/2.0 - text_dim.y/2.0,
+    );
+    d.draw_text_ex(&font, text, text_pos, font.baseSize as f32, 0.0, Color::RAYWHITE);
 }
 
+fn draw_moves(s: &mut impl RaylibDraw, sec: &mut Rectangle, font: &Font, game: &Game, current: usize) -> Rectangle {
+    let mut move_counter = 1;
+    let mut x;
+    let mut y = 0.0;
+    let gap = font.baseSize as f32 * 1.5;
+    let each_height = font.baseSize as f32 * 2.0;
+    let mut draw_bkgd = false;
+    let mut curr_move_rect = Rectangle::default();
+    // [ (move number) (gap 1) (white's move) (gap 2) (black's move) ]
+    // [ (   0.05    ) ( 0.2 ) (   0.325    ) ( 0.1 ) (   0.325    ) ]
+    // for (i, b_info) in moves.iter().enumerate() {
+    for i in 0..game.move_count() {
+        let mv = game.move_at(i);
+        if mv.is_none() { break; }
+        let mv = mv.unwrap().to_str();
+        let mv = mv.trim();
+
+        if i % 2 == 0 {
+            y = sec.y + (each_height * (i as f32)/2.0) + gap;
+            if draw_bkgd {
+                s.draw_rectangle_rec(
+                    Rectangle::new(sec.x, y - (each_height - gap), sec.width, each_height),
+                    MOVELIST_LIGHT_BKGD
+                );
+            }
+            draw_bkgd = !draw_bkgd;
+
+            x = sec.x + (0.05*sec.width);
+            s.draw_text_ex(font, &move_counter.to_string(), Vector2::new(x, y),
+                font.baseSize as f32, 0.0, Color::GRAY);
+            move_counter += 1;
+
+            if (y + each_height) - sec.y > sec.height {
+                sec.height += gap;
+            }
+            x = sec.x + 0.25*sec.width;
+        } else {
+            x = sec.x + 0.675*sec.width;
+        }
+        let curr_ind = current.saturating_sub(1);
+        if i == curr_ind {
+            let text_dim = text::measure_text_ex(font, mv, font.baseSize as f32, 0.0);
+            let (pad_horz, pad_vert) = (0.75*text_dim.x, 0.5*text_dim.y);
+            curr_move_rect = Rectangle::new(x - pad_horz/2.0, y - pad_vert/2.0, text_dim.x + pad_horz, text_dim.y + pad_vert);
+            s.draw_rectangle_rounded(curr_move_rect, 0.2, 10, Color::DARKGRAY);
+        }
+        s.draw_text_ex(font, mv, Vector2::new(x, y), font.baseSize as f32, 0.0, Color::RAYWHITE);
+    }
+    curr_move_rect
+}
+
+/* ===================================== USER INPUT RELATED ===================================== */
+/*
 fn handle_board_selected(
     rl: &RaylibHandle, board: &Board, board_sec: &Rectangle, selected: &mut Option<Sq>
 ) {
@@ -291,208 +359,28 @@ fn update_player(
     handle_board_selected(rl, board, boundary, selected);
     handle_board_target(rl, board, boundary, &selected, target, is_promotion);
 }
+*/
+/* ===================================== USER INPUT RELATED ===================================== */
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum GameState {
-    Ongoing,
-    LightWinByCheckmate,
-    DarkWinByCheckmate,
-    LightLostOnTime,
-    DarkLostOnTime,
-    DrawByStalemate,
-    DrawByFiftyMoveRule,
-    DrawByThreefoldRepetition,
-    DrawByInsufficientMaterial,
-}
-
-fn insufficient_material(b: &Board) -> bool {
-    if b.pos.units[0].count_ones() == 1 && b.pos.units[1].count_ones() == 1 {
-        // K vs k
-        return true;
-    }
-    if (b.pos.units[0].count_ones() == 2 && b.pos.piece[1].count_ones() == 1 && b.pos.units[1].count_ones() == 1)
-        || (b.pos.units[1].count_ones() == 2 && b.pos.piece[7].count_ones() == 1 && b.pos.units[0].count_ones() == 1)
-    {
-        // (KN vs k) and (K vs kn)
-        return true;
-    }
-    if (b.pos.units[0].count_ones() == 2 && b.pos.piece[2].count_ones() == 1 && b.pos.units[1].count_ones() == 1)
-        || (b.pos.units[1].count_ones() == 2 && b.pos.piece[8].count_ones() == 1 && b.pos.units[0].count_ones() == 1)
-    {
-        // (KB vs k) and (K vs kb)
-        return true;
-    }
-    if b.pos.units[0].count_ones() == 2 && b.pos.piece[1].count_ones() == 1
-        && b.pos.units[1].count_ones() == 2 && b.pos.piece[7].count_ones() == 1 {
-        // KN vs kn
-        return true;
-    }
-    if b.pos.units[0].count_ones() == 2 && b.pos.piece[2].count_ones() == 1
-        && b.pos.units[1].count_ones() == 2 && b.pos.piece[8].count_ones() == 1 {
-        // KB vs kb
-        let white_bishop = b.pos.piece[2].lsb();
-        let (wr, wf) = (ROW!(white_bishop), COL!(white_bishop));
-        let black_bishop = b.pos.piece[8].lsb();
-        let (br, bf) = (ROW!(black_bishop), COL!(black_bishop));
-        // If both bishops are the same color and there are only 1 bishops per side,
-        // it's a draw due to insufficient material
-        return (wr + wf) % 2 == (br + bf) % 2;
-    }
-    false
-}
-
-#[derive(Clone)]
-struct BoardUI {
-    board: Board,
-    selected: Option<Sq>,
-    target: Option<Sq>,
-    check: Option<Sq>,
-}
-
-impl BoardUI {
-    fn from(board: &Board) -> Self {
-        Self {
-            board: board.clone(),
-            selected: None,
-            target: None,
-            check: None,
-        }
-    }
-
-    fn highlight_selected(&mut self, sq: usize) {
-        // Reset everything before setting the `selected` square
-        self.selected = None;
-        self.target = None;
-        self.check = None;
-
-        self.selected = Some(Sq::from_num(sq));
-    }
-
-    fn highlight_target(&mut self, sq: usize) {
-        self.target = Some(Sq::from_num(sq));
-    }
-
-    fn highlight_check(&mut self, is_white: bool) {
-        let king_ind = if is_white { 5 } else { 11 };
-        let king_sq = self.board.pos.piece[king_ind].lsb();
-        self.check = Some(Sq::from_num(king_sq));
-    }
-}
-
-pub struct BoardInfo {
-    b_ui: BoardUI,
-    mv: Option<Move>,
-    game_state: GameState,
-}
-
-impl BoardInfo {
-    fn from(b_ui: &BoardUI) -> Self {
-        Self {
-            b_ui: b_ui.clone(),
-            mv: None,
-            game_state: GameState::Ongoing
-        }
-    }
-
-    pub fn mv(&self) -> Option<Move> {
-        self.mv.clone()
-    }
-
-    pub fn board(&self) -> &Board {
-        &self.b_ui.board
-    }
-
-    pub fn is_checkmate(&self) -> bool {
-        self.game_state == GameState::LightWinByCheckmate
-            || self.game_state == GameState::DarkWinByCheckmate
-    }
-
-    pub fn check(&self) -> bool {
-        self.b_ui.check.is_some()
-    }
-
-    pub fn is_ongoing(&self) -> bool {
-        self.game_state == GameState::Ongoing
-    }
-
-    fn update(&mut self, mv: Move, game_state: GameState) {
-        self.mv = Some(mv);
-        self.game_state = game_state;
-    }
-}
-
-
-fn draw_players_name(d: &mut RaylibDrawHandle, font: &Font, sec: &Rectangle, light_name: &str, dark_name: &str) {
-    let margin = Vector2::new(sec.width * 0.01, sec.height * 0.03);
-
-    let text = &format!("{}   vs    {}", light_name, dark_name);
-    let text_dim = text::measure_text_ex(font, text, font.baseSize as f32, 0.0);
-
-    let rect_width = f32::max(sec.width * 0.9, 1.5*text_dim.x);
-    let rect_height = text_dim.y * 1.65;
-    let bkgd_rect = Rectangle {
-        x: sec.x + (sec.width - margin.x) / 2.0 - rect_width / 2.0,
-        y: sec.y + margin.y + 0.05 * (sec.height - margin.y),
-        width: rect_width,
-        height: rect_height
-    };
-
-    d.draw_rectangle_lines_ex(bkgd_rect, 3, Color::RAYWHITE);
-    let text_pos = Vector2::new(
-        bkgd_rect.x + bkgd_rect.width/2.0 - text_dim.x/2.0,
-        bkgd_rect.y + bkgd_rect.height/2.0 - text_dim.y/2.0,
-    );
-    d.draw_text_ex(&font, text, text_pos, font.baseSize as f32, 0.0, Color::RAYWHITE);
-}
-
-fn draw_moves(s: &mut impl RaylibDraw, sec: &mut Rectangle, font: &Font, moves: &Vec<BoardInfo>, current: usize) -> Rectangle {
-    let mut move_counter = 1;
-    let mut x;
-    let mut y = 0.0;
-    let gap = font.baseSize as f32 * 1.5;
-    let each_height = font.baseSize as f32 * 2.0;
-    let mut draw_bkgd = false;
-    let mut curr_move_rect = Rectangle::default();
-    // [ (move number) (gap 1) (white's move) (gap 2) (black's move) ]
-    // [ (   0.05    ) ( 0.2 ) (   0.325    ) ( 0.1 ) (   0.325    ) ]
-    for (i, b_info) in moves.iter().enumerate() {
-        let mv = b_info.mv;
-        if mv.is_none() { break; }
-        let mv = mv.unwrap().to_str();
-        let mv = mv.trim();
-
-        if i % 2 == 0 {
-            y = sec.y + (each_height * (i as f32)/2.0) + gap;
-            if draw_bkgd {
-                s.draw_rectangle_rec(
-                    Rectangle::new(sec.x, y - (each_height - gap), sec.width, each_height),
-                    MOVELIST_LIGHT_BKGD
-                );
+fn get_move_from_engine(frame_time: f32, current_fen: &str, engine: &mut EngineComm) -> Option<String> {
+    let mut retry_count = 0;
+    while retry_count < 2 {
+        if let Some(best_move) = engine.best_move() {
+            assert!(best_move.len() == 4 || best_move.len() == 5, "Length: {}", best_move.len());
+            if best_move == "a8a8P" {
+                retry_count += 1;
+                println!("Retry because of 'a8a8P'");
+                continue;
             }
-            draw_bkgd = !draw_bkgd;
-
-            x = sec.x + (0.05*sec.width);
-            s.draw_text_ex(font, &move_counter.to_string(), Vector2::new(x, y),
-                font.baseSize as f32, 0.0, Color::GRAY);
-            move_counter += 1;
-
-            if (y + each_height) - sec.y > sec.height {
-                sec.height += gap;
-            }
-            x = sec.x + 0.25*sec.width;
+            // println!("[{}] '{}'", best_move.len(), &best_move);
+            return Some(best_move);
         } else {
-            x = sec.x + 0.675*sec.width;
+            println!("Retry because NO MOVE was sent by engine. ");
+            retry_count += 1;
         }
-        let curr_ind = current.saturating_sub(1);
-        if i == curr_ind {
-            let text_dim = text::measure_text_ex(font, mv, font.baseSize as f32, 0.0);
-            let (pad_horz, pad_vert) = (0.75*text_dim.x, 0.5*text_dim.y);
-            curr_move_rect = Rectangle::new(x - pad_horz/2.0, y - pad_vert/2.0, text_dim.x + pad_horz, text_dim.y + pad_vert);
-            s.draw_rectangle_rounded(curr_move_rect, 0.2, 10, Color::DARKGRAY);
-        }
-        s.draw_text_ex(font, mv, Vector2::new(x, y), font.baseSize as f32, 0.0, Color::RAYWHITE);
     }
-    curr_move_rect
+    eprintln!("[ERROR] Engine, '{}' couldn't give a legal move", engine.name());
+    return None;
 }
 
 struct GUI {
@@ -500,29 +388,6 @@ struct GUI {
     target: Option<Sq>,
     is_promotion: bool,
     promoted_piece: Option<Piece>,
-
-    // Engine related
-    play_game: bool,
-    eval: i32,
-    is_mate: bool,
-
-    // Current board position
-    original_fen: String,
-    current_fen: String,
-    current: BoardUI,
-    other: BoardUI,
-    other_index: usize,
-    state: GameState,
-    // History of moves and board
-    history: Vec<BoardInfo>,
-    current_index: usize,
-
-    // Animation
-    anim_start_time: Instant,
-    anim_mv: Option<Move>,
-    is_animating: bool,
-    anim_target_board: Option<Board>,
-    anim_duration_secs: f32,
 
     // Sections on the screen
     board_sec: Rectangle,
@@ -536,42 +401,14 @@ struct GUI {
 }
 
 impl GUI {
-    fn new(zobrist_info: &ZobristInfo) -> Self {
-        Self::from_fen(FEN_POSITIONS[1], zobrist_info)
-    }
-
-    fn from_fen(fen: &str, zobrist_info: &ZobristInfo) -> Self {
-        let board = Board::from_fen(fen, zobrist_info);
-        let current = BoardUI::from(&board);
-        let other = current.clone();
-        let history = vec![BoardInfo::from(&current)];
-
+    fn new() -> Self {
         Self {
             selected: None,
             target: None,
             is_promotion: false,
             promoted_piece: None,
 
-            play_game: false,
-            eval: 0,
-            is_mate: false,
-
-            original_fen: String::from(fen),
-            current_fen: String::from(fen),
-            current,
-            other,
-            other_index: 0,
-            state: GameState::Ongoing,
-
-            history,
-            current_index: 0,
-
-            anim_start_time: Instant::now(),
-            anim_mv: None,
-            is_animating: false,
-            anim_target_board: None,
-            anim_duration_secs: f32::min(0.15, SECONDS_PER_MOVE - 0.05),
-
+            // Sections on the screen
             board_sec: Rectangle::default(),
             promotion_sec: Rectangle::default(),
             info_sec: Rectangle::default(),
@@ -652,232 +489,9 @@ impl GUI {
         }
     }
 
-    fn update_state(&mut self, attack_info: &AttackInfo, zobrist_info: &ZobristInfo) {
-        // Check for draw by fifty move rule
-        //   - units[0] -> all the white pieces
-        //   - units[1] -> all the black pieces
-        //   - Since kings can't be captured, if both sides only have one piece
-        //     then that means that only kings are left on the board
-        if self.current.board.state.half_moves >= 100 {
-            self.state = GameState::DrawByFiftyMoveRule;
-            return;
-        }
-        // Check for draw by insufficient material
-        if insufficient_material(&self.current.board) {
-            self.state = GameState::DrawByInsufficientMaterial;
-            return;
-        }
-
-        // Check for draw by checkmate or stalemate
-        let board = &mut self.current.board;
-        let mut ml = MoveList::new();
-        move_gen::generate_all(&board, attack_info, &mut ml);
-        // Remove illegal moves from the move list
-        for i in (0..ml.moves.len()).rev() {
-            let clone = board.clone();
-            if !moves::make(board, attack_info, zobrist_info, ml.moves[i], MoveFlag::AllMoves) {
-                ml.moves.remove(i);
-            }
-            *board = clone;
-        }
-        if ml.moves.len() == 0 {
-            if self.current.board.is_in_check(attack_info, self.current.board.state.xside) {
-                if self.current.board.state.xside == PieceColor::Light {
-                    self.state = GameState::LightWinByCheckmate;
-                    return;
-                } else {
-                    self.state = GameState::DarkWinByCheckmate;
-                    return;
-                }
-            } else {
-                self.state = GameState::DrawByStalemate;
-                return;
-            }
-        }
-
-        // Check for draw by three fold repetition
-        let mut repetition_count = 0;
-        let (curr_key, curr_lock) = (self.current.board.state.key, self.current.board.state.lock);
-        for pos in &self.history {
-            let b = &pos.b_ui.board;
-            if curr_key == b.state.key && curr_lock == b.state.lock {
-                repetition_count += 1;
-                if repetition_count == 3 {
-                    self.state = GameState::DrawByThreefoldRepetition;
-                    return;
-                }
-            }
-        }
-
-        self.state = GameState::Ongoing;
-    }
-
-    fn make_move(&mut self, attack_info: &AttackInfo, zobrist_info: &ZobristInfo) -> bool {
-        let mut is_legal = false;
-        let curr_move = move_is_legal(
-            &self.current.board, attack_info, self.selected.unwrap(),
-            self.target.unwrap(), self.promoted_piece
-        );
-        self.anim_target_board = Some(self.current.board.clone());
-        if let Some(mv) = curr_move {
-            if moves::make(self.anim_target_board.as_mut().unwrap(), attack_info, zobrist_info, mv, MoveFlag::AllMoves) {
-                is_legal = true;
-                self.current_fen = fen::gen_fen(self.anim_target_board.as_ref().unwrap());
-                if let Some(b_info) = self.history.last_mut() {
-                    b_info.update(mv, self.state);
-                }
-                if self.state == GameState::Ongoing {
-                    self.history.push(BoardInfo::from(&self.current));
-                } else {
-                    println!("Game ended by {:?}", self.state);
-                }
-                self.current_index = self.history.len() - 1;
-                self.other_index = self.current_index;
-
-                // TO BE REMOVED
-                self.other = BoardUI {
-                    board: self.anim_target_board.clone().unwrap().clone(),
-                    ..self.current.clone()
-                };
-                // =======================================
-
-                let b = self.anim_target_board.as_ref().unwrap();
-                if b.is_in_check(attack_info, b.state.xside) {
-                    self.current.highlight_check(b.state.side as usize == 0);
-                }
-
-                self.anim_mv = Some(mv);
-                self.anim_start_time = Instant::now();
-                self.is_animating = true;
-            } else {
-                eprintln!("[ERROR] Illegal move! {}", mv.to_str());
-                is_legal = false;
-            }
-        }
-        self.selected = None;
-        self.target = None;
-        self.promoted_piece = None;
-        self.is_promotion = false;
-        is_legal
-    }
-
-    fn update_engine(&mut self, frame_time: f32, engine: &mut EngineComm) {
-        if !engine.is_searching() {
-            engine.fen(&self.current_fen);
-            engine.search_movetime((SECONDS_PER_MOVE * 1000.0) as u64);
-        } else {
-            if !engine.search_time_over() {
-                engine.update_time_left(frame_time);
-            } else {
-                if let Some(best_move) = engine.best_move(&mut self.eval, &mut self.is_mate) {
-                    assert!(best_move.len() == 4 || best_move.len() == 5, "Length: {}", best_move.len());
-                    println!("[{}] '{}'", best_move.len(), &best_move);
-                    // Move from engine example: "b7b8q"
-                    self.selected = Some(Sq::from_str(&best_move[0..2])); // "b7"
-                    self.target = Some(Sq::from_str(&best_move[2..4]));   // "b8"
-                    self.promoted_piece = if best_move.len() == 5 {       // 'q'
-                        if let Some(piece_char) = best_move.chars().nth(4) {
-                            Piece::from_char(piece_char)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-                }
-            }
-        }
-    }
-
-    fn go_to_start(&mut self) {
-        if !self.play_game {
-            self.other_index = 0;
-            self.other = self.history[self.other_index].b_ui.clone();
-        }
-    }
-
-    fn go_to_current(&mut self) {
-        if !self.play_game {
-            self.other_index = self.current_index;
-            self.other = BoardUI {
-                board: self.current.board.clone(),
-                ..self.history[self.other_index].b_ui.clone()
-            };
-        }
-    }
-
-    fn go_to_first_move(&mut self) {
-        if !self.play_game {
-            self.other_index = 1;
-            self.other = BoardUI {
-                board: self.history[self.other_index + 1].b_ui.board.clone(),
-                ..self.history[self.other_index].b_ui.clone()
-            };
-        }
-    }
-
-    fn undo_move(&mut self) {
-        if !self.play_game {
-            if self.other_index == 1 {
-                self.go_to_first_move();
-                return;
-            } else if self.other_index == 0 {
-                self.go_to_start();
-                return;
-            }
-            println!("[UNDO] current_index = {}", self.current_index);
-            println!("[UNDO] other_index = {}\n", self.other_index);
-            self.other = BoardUI {
-                board: self.history[self.other_index].b_ui.board.clone(),
-                ..self.history[self.other_index - 1].b_ui.clone()
-            };
-            self.other_index = self.other_index.saturating_sub(1);
-        }
-    }
-
-    fn forward_move(&mut self) {
-        if !self.play_game {
-            if self.other_index >= self.history.len() - 2 {
-                self.go_to_current();
-                return;
-            }
-            self.other_index += 1;
-            println!("[FORW] current_index = {}", self.current_index);
-            println!("[FORW] other_index = {}\n", self.other_index);
-            self.other = BoardUI {
-                board: self.history[self.other_index + 1].b_ui.board.clone(),
-                ..self.history[self.other_index].b_ui.clone()
-            };
-        }
-    }
-
-    fn play(&mut self) {
-        if self.current_index == self.history.len() - 1 {
-            self.play_game = true;
-            self.follow_move_list = true;
-        } else {
-            self.current_index = self.history.len() - 1;
-            self.toggle_play();
-        }
-    }
-
-    fn pause(&mut self) {
-        if self.play_game {
-            self.play_game = false;
-            self.follow_move_list = false;
-        }
-    }
-
-    fn toggle_play(&mut self) {
-        if self.play_game {
-            self.pause();
-        } else {
-            self.play();
-        }
-    }
 }
 
-const SECONDS_PER_MOVE: f32 = 1.25;
+const SECONDS_PER_MOVE: f32 = 1.0;
 
 const MOVELIST_LIGHT_BKGD: Color = Color::new(28, 28, 28, 255);
 const MOVELIST_DARK_BKGD: Color = Color::new(22, 22, 22, 255);
@@ -936,18 +550,39 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
     piece_tex.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
     let game_end_tex = rl.load_texture(&thread, "assets/chesscom-pieces/game-end-icons.png")?;
     game_end_tex.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
-    let btn_icons = rl.load_texture(&thread, "assets/btn-icons.png")?;
+    let btn_icons = rl.load_texture(&thread, "assets/move-player-icons.png")?;
     btn_icons.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
 
     let font = rl.load_font(&thread, "assets/fonts/Inter-Regular.ttf")?;
     let move_list_font = rl.load_font_ex(&thread, "assets/fonts/Inter-Medium.ttf", 20, FontLoadEx::Default(0))?;
     let bold_font = rl.load_font(&thread, "assets/fonts/Inter-Bold.ttf")?;
 
-    // let mut gui = GUI::new(&zobrist_info);
-    let mut gui = GUI::from_fen("4r1k1/3p1p2/3p1Q2/B2P4/P1r5/6P1/5K1P/8 b - - 0 33", &zobrist_info);
+    let mut gui = GUI::new();
     gui.init_sections(rl.get_screen_width(), rl.get_screen_height());
 
+    let mut game = Game::new(engine_a.name(), engine_b.name(), &zobrist_info);
+    // Start a new game
+    // game.set_start_pos(fen::FEN_POSITIONS[1], &zobrist_info);
+    game.set_start_pos("r3r1k1/pppqppbp/5np1/3Pn1B1/2P5/2NB4/PP3PPP/R2QK2R w KQ - 1 12", &zobrist_info);
+
+    // Engine handle
+    let mut play_game = false;
     let mut is_engine_a = true;
+    let mut engine_move_str = None;
+
+    // Move Animations
+    let mut anim_start_time = Instant::now();
+    let mut anim_mv: Option<Move> = None;
+    let mut is_animating = false;
+    let mut anim_board = game.board_after_last_move().cloned().unwrap();
+    let mut anim_target_board = None;
+    let anim_duration_secs = f32::min(0.3, SECONDS_PER_MOVE - 0.05);
+
+    let mut move_index: usize = 0;
+    let mut new_input = false;
+
+    let mut source = None;
+    let mut target = None;
 
     while !rl.window_should_close() {
         /* ==================== UPDATE PHASE ==================== */
@@ -957,6 +592,7 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         gui.update_sections(size, margin);
         gui.handle_scrolling(&rl);
 
+        // Move buttons
         let sec = gui.info_sec;
         let sec_margin = sec.width * 0.05;
         let width = (sec.width - 2.0*sec_margin) / 6.5;
@@ -983,104 +619,135 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         for btn in &move_btns {
             if btn.is_clicked(&rl) {
                 match btn.kind() {
-                    MoveButtonType::First => gui.go_to_start(),
-                    MoveButtonType::Previous => gui.undo_move(),
-                    MoveButtonType::PlayPause => gui.toggle_play(),
-                    MoveButtonType::Next => gui.forward_move(),
-                    MoveButtonType::Last => gui.go_to_current(),
+                    MoveButtonType::First => move_index = 0,
+                    MoveButtonType::Previous => move_index = move_index.saturating_sub(1),
+                    MoveButtonType::PlayPause => play_game = !play_game,
+                    MoveButtonType::Next => {
+                        move_index += 1;
+                        if move_index >= game.move_count() {
+                            move_index = game.move_count() - 1;
+                        }
+                    },
+                    MoveButtonType::Last => move_index = game.move_count() - 1,
                 }
+                new_input = true;
             }
         }
 
         if rl.is_key_pressed(KeyboardKey::KEY_SPACE) {
-            gui.toggle_play();
-        } else if rl.is_key_pressed(KeyboardKey::KEY_ONE) {
-            gui.go_to_first_move();
+            play_game = !play_game;
         } else if rl.is_key_pressed(KeyboardKey::KEY_LEFT) {
-            gui.undo_move();
+            move_index = move_index.saturating_sub(1);
         } else if rl.is_key_pressed(KeyboardKey::KEY_RIGHT) {
-            gui.forward_move();
+            move_index += 1;
+            if move_index >= game.move_count() {
+                move_index = game.move_count() - 1;
+            }
         } else if rl.is_key_pressed(KeyboardKey::KEY_UP) {
-            gui.go_to_start();
+            move_index = 0;
         } else if rl.is_key_pressed(KeyboardKey::KEY_DOWN) {
-            gui.go_to_current();
+            move_index = game.move_count() - 1;
         } else if rl.is_key_pressed(KeyboardKey::KEY_F) {
-            let current_fen = fen::gen_fen(&gui.current.board);
+            let current_fen = game.current_fen();
             if rl.set_clipboard_text(&current_fen).is_err() {
                 eprintln!("[ERROR] Failed to copy clipboard to fen");
             }
         } else if rl.is_key_pressed(KeyboardKey::KEY_N) {
-            if !gui.play_game {
-                gui = GUI::new(&zobrist_info);
+            if !play_game {
+                game = Game::new(engine_a.name(), engine_b.name(), &zobrist_info);
                 is_engine_a = true;
-                println!("fen: '{}'", gui.current_fen);
+                println!("fen: '{}'", game.start_fen());
+                move_index = 0;
+                anim_board = game.board_before_move(move_index).cloned().unwrap();
+                source = None;
+                target = None;
             }
         } else if rl.is_key_pressed(KeyboardKey::KEY_R) {
             // Reset board and load a random fen to current position
-            if !gui.play_game {
+            if !play_game {
                 let rand_ind = rand::random::<usize>() % 500;
-                let random_fen = fens.lines().nth(rand_ind).unwrap();
-                gui = GUI::from_fen(random_fen, &zobrist_info);
-                is_engine_a = true;
-                println!("fen: '{}'", gui.current_fen);
+                if let Some(random_fen) = fens.lines().nth(rand_ind) {
+                    game = Game::from_fen(engine_a.name(), engine_b.name(), random_fen, &zobrist_info);
+                    is_engine_a = true;
+                    println!("[{}] fen: '{}'", rand_ind, game.start_fen());
+                    move_index = 0;
+                    anim_board = game.board_before_move(move_index).cloned().unwrap();
+                    source = None;
+                    target = None;
+                }
             }
         } else if rl.is_key_pressed(KeyboardKey::KEY_S) {
-            if !gui.play_game {
-                if pgn::save("game.pgn", engine_a.name(), engine_b.name(), &gui.original_fen, &gui.state, &attack_info, &gui.history).is_err() {
+            if !play_game {
+                if pgn::save("game.pgn", &game, &attack_info).is_err() {
                     return Err("Couldn't save game to file 'game.pgn'".to_string());
                 }
             }
         }
 
-        if gui.state == GameState::Ongoing {
-            gui.update_state(&attack_info, &zobrist_info);
+        if play_game && !game.is_ongoing() {
+            play_game = false;
         }
+        gui.follow_move_list = play_game;
 
-        if gui.play_game && gui.state != GameState::Ongoing {
-            gui.play_game = false;
-            gui.follow_move_list = false;
-        }
-
-        if gui.play_game {
+        if game.is_ongoing() && play_game {
             let engine = if is_engine_a { &mut engine_a } else { &mut engine_b };
-
-            gui.update_engine(rl.get_frame_time(), engine);
-
-            if let Some(sq) = gui.selected {
-                gui.current.highlight_selected(sq as usize);
-            }
-            if let Some(sq) = gui.target {
-                gui.current.highlight_target(sq as usize);
-            }
-            // Correct the promotion piece from the UCI string
-            if let Some(piece) = gui.promoted_piece {
-                let mut piece_num = piece as usize % 6;
-                if gui.current.board.state.side == PieceColor::Dark { piece_num += 6 };
-                gui.promoted_piece = Piece::from_num(piece_num);
-            }
-
             if !engine.is_searching() {
+                engine.fen(&game.current_fen());
+                engine.search_movetime((SECONDS_PER_MOVE * 1000.0) as u64);
                 is_engine_a = !is_engine_a;
+            } else if !engine.search_time_over() {
+                engine.update_time_left(rl.get_frame_time());
+            } else {
+                engine_move_str = get_move_from_engine(rl.get_frame_time(), &game.current_fen(), engine);
             }
         }
-        // update_player(&rl, &mut board, &attack_info, &boundary, &promoted_boundary, &mut selected, &mut target,
-        //     &mut is_promotion, &mut promoted_piece);
-        if gui.selected.is_some() && gui.target.is_some() && !gui.is_promotion {
-            let _ = gui.make_move(&attack_info, &zobrist_info);
-        }
 
+        if let Some(ref mv_str) = engine_move_str.take() {
+            let mut found_move = None;
+            if let Some(board) = game.board_after_last_move() {
+                let source = mv_str.get(0..2);
+                let target = mv_str.get(2..4);
+                let promoted = if let Some(ch) = mv_str.chars().nth(4) {
+                    let piece_char = if board.is_white_to_move() {
+                        ch.to_ascii_uppercase()
+                    } else { ch };
+                    Piece::from_char(piece_char)
+                } else { None };
+
+                let piece = if let Some(sq_str) = source {
+                    board.find_piece(Sq::from_str(sq_str) as usize)
+                } else { None };
+
+                if let Some(p) = piece {
+                    let mut ml = MoveList::new();
+                    move_gen::generate_by_piece(board, &attack_info, &mut ml, p);
+                    if source.is_some() && target.is_some() {
+                        found_move = ml.search(
+                            Sq::from_str(source.unwrap()),
+                            Sq::from_str(target.unwrap()),
+                            promoted
+                        );
+                    }
+                }
+            }
+            if let Some(mv) = found_move {
+                let _ = game.make_move(mv, &attack_info, &zobrist_info);
+                move_index += 1;
+
+                is_animating = true;
+                anim_start_time = Instant::now();
+                anim_mv = Some(mv);
+                anim_target_board = game.board_after_last_move().cloned();
+                // anim_target_board = game.board_after_move(move_index).cloned();
+            } else {
+                // eprintln!("[ERROR] Couldn't find engine's move in the current position");
+                // eprintln!(" - Move: {mv_str}");
+                // eprintln!(" -  FEN: {}", game.current_fen());
+            }
+        }
 
         /* ==================== RENDER PHASE ==================== */
-        let mut d = rl.begin_drawing(&thread);
-        d.clear_background(BACKGROUND);
-        let b_ui = if gui.play_game { &gui.current } else { &gui.other };
-        draw_board(&mut d, &gui.board_sec, b_ui);
-        draw_coords(&mut d, &bold_font, &gui.board_sec);
-        let skip_sq = if gui.current_index == gui.history.len() - 1 { b_ui.selected } else { None };
-        // let skip_sq = gui.history[gui.current_index].b_ui.selected;
-        draw_pieces(&mut d, skip_sq, &piece_tex, b_ui, &gui.board_sec);
-
-        fn draw_pieces(d: &mut RaylibDrawHandle, skip_sq: Option<Sq>, tex: &Texture2D, b_ui: &BoardUI, sec: &Rectangle) {
+        fn draw_pieces(d: &mut RaylibDrawHandle, skip_sq: Option<Sq>, tex: &Texture2D, board: &Board, sec: &Rectangle) {
             for r in 0..8 {
                 for f in 0..8 {
                     let sq = SQ!(r, f);
@@ -1089,7 +756,7 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
                             continue;
                         }
                     }
-                    if let Some(piece) = b_ui.board.find_piece(sq) {
+                    if let Some(piece) = board.find_piece(sq) {
                         draw_piece(d, tex, piece_rect_on_board(sec, sq), piece);
                     }
                 }
@@ -1107,70 +774,49 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
             draw_piece(d, tex, anim_rect, piece);
         }
 
-        if let Some(mv) = gui.anim_mv {
+        let mut d = rl.begin_drawing(&thread);
+        d.clear_background(BACKGROUND);
+
+        if !play_game && new_input {
+            anim_mv = game.move_at(move_index).copied();
+            anim_board = game.board_before_move(move_index).cloned().unwrap();
+            anim_target_board = game.board_after_move(move_index).cloned();
+            new_input = false;
+            is_animating = true;
+        }
+
+        if let Some(mv) = anim_mv {
+            source = Some(mv.source());
+            target = Some(mv.target());
+        };
+        draw_board(&mut d, &gui.board_sec, source, target);
+        draw_coords(&mut d, &bold_font, &gui.board_sec);
+        let skip_sq = if is_animating { source } else { None };
+        draw_pieces(&mut d, skip_sq, &piece_tex, &anim_board, &gui.board_sec);
+
+        if let Some(mv) = anim_mv {
             // anim_t = (NOW - anim_start_time) / ANIM_DURATION_SECS;
-            let elapsed = Instant::now().duration_since(gui.anim_start_time);
-            let anim_t = elapsed.div_f32(gui.anim_duration_secs).as_secs_f32();
-            if gui.is_animating && anim_t >= 1.0 {
-                gui.is_animating = false;
-                gui.anim_mv = None;
-                gui.current.board = gui.anim_target_board.unwrap();
-                gui.anim_target_board = None;
+            let elapsed = Instant::now().duration_since(anim_start_time);
+            let anim_t = elapsed.div_f32(anim_duration_secs).as_secs_f32();
+            if is_animating && anim_t >= 1.0 {
+                is_animating = false;
+                anim_mv = None;
+                if let Some(board) = anim_target_board.take() {
+                    anim_board = board;
+                }
                 // Instantly make the move by drawing the target board
-                draw_pieces(&mut d, None, &piece_tex, &gui.current, &gui.board_sec);
+                draw_pieces(&mut d, None, &piece_tex, &anim_board, &gui.board_sec);
             }
 
-            if gui.is_animating {
+            if is_animating {
                 anim_piece(&mut d, &gui.board_sec, &piece_tex, mv, anim_t);
             }
         }
 
-        if gui.state != GameState::Ongoing {
-            draw_markers(&mut d, &gui.current.board, &game_end_tex, &gui.board_sec, gui.state);
+        if !game.is_ongoing() && move_index == game.move_count() {
+            draw_markers(&mut d, &anim_board, &game_end_tex, &gui.board_sec, game.state());
         }
-
-        if gui.is_promotion {
-            d.draw_rectangle_rec(gui.promotion_sec, PROMOTION_BACKGROUND);
-            let color = gui.current.board.state.side as usize;
-            for i in (PieceType::Knight as usize)..=(PieceType::Queen as usize) {
-                let kind = i;
-                let source_rect = Rectangle::new(
-                    (kind as i32 * piece_tex.width() / 6) as f32,
-                    (color as i32 * piece_tex.height() / 2) as f32,
-                    (piece_tex.width() / 6) as f32,
-                    (piece_tex.height() / 2) as f32,
-                );
-                let target_rect = Rectangle::new(
-                    gui.promotion_sec.x + ((i-1) as f32) * gui.promotion_sec.width / 4.0,
-                    gui.promotion_sec.y,
-                    gui.promotion_sec.width / 4.0,
-                    gui.promotion_sec.height
-                );
-                d.draw_texture_pro(
-                    &piece_tex,
-                    source_rect,
-                    target_rect,
-                    Vector2::zero(),
-                    0.0,
-                    Color::WHITE,
-                );
-            }
-        }
-
-        draw_players_name(&mut d, &font, &gui.info_sec, engine_a.name(), engine_b.name());
-
-        {
-            let mut s = d.begin_scissor_mode(
-                gui.move_list_sec.x as i32,
-                gui.move_list_sec.y as i32,
-                gui.move_list_sec.width as i32,
-                gui.move_list_sec.height as i32,
-            );
-            gui.curr_move_rect = draw_moves(&mut s, &mut gui.move_list_rect, &move_list_font, &gui.history, gui.other_index);
-            s.draw_rectangle_lines_ex(gui.move_list_sec, 3, Color::RAYWHITE);
-        }
-
-        d.draw_rectangle_lines_ex(gui.info_sec, 2, Color::RED);
+        draw_players_name(&mut d, &font, &gui.info_sec, game.white_name(), game.black_name());
 
         for btn in &move_btns {
             btn.draw(&mut d, mouse_pos);
@@ -1181,18 +827,32 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
                 width: min_side,
                 height: min_side,
             };
-            let frame_width = btn_icons.width() as f32 / 3.0;
-            let (ind, center, rotation) = match *btn.kind() {
-                MoveButtonType::First => (2, Vector2::zero(), 0.0),
-                MoveButtonType::Previous => (1, Vector2::zero(), 0.0),
-                MoveButtonType::PlayPause => (0, Vector2::zero(), 0.0),
-                MoveButtonType::Next => (1, Vector2::new(target.width, target.height), 180.0),
-                MoveButtonType::Last => (2, Vector2::new(target.width, target.height), 180.0),
-            };
-            let source = Rectangle::new(ind as f32*frame_width, 0.0, frame_width, btn_icons.height() as f32);
-            d.draw_texture_pro(&btn_icons, source, target, center, rotation, Color::WHITE);
+            let frame_width = btn_icons.width() as f32 / 6.0;
+            let ind = match *btn.kind() {
+                MoveButtonType::First     => 4,
+                MoveButtonType::Previous  => 2,
+                MoveButtonType::Next      => 3,
+                MoveButtonType::Last      => 5,
+                MoveButtonType::PlayPause => {
+                    if play_game { 1 } else { 0 }
+                }
+            } as f32;
+            let source = Rectangle::new(ind*frame_width, 0.0, frame_width, btn_icons.height() as f32);
+            d.draw_texture_pro(&btn_icons, source, target, Vector2::zero(), 0.0, Color::WHITE);
+        }
+
+
+        {
+            let mut s = d.begin_scissor_mode(
+                gui.move_list_sec.x as i32,
+                gui.move_list_sec.y as i32,
+                gui.move_list_sec.width as i32,
+                gui.move_list_sec.height as i32,
+            );
+            gui.curr_move_rect = draw_moves(&mut s, &mut gui.move_list_rect, &move_list_font, &game, move_index);
+            s.draw_rectangle_lines_ex(gui.move_list_sec, 3, Color::RAYWHITE);
         }
     }
-    
+
     Ok(())
 }

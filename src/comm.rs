@@ -140,7 +140,7 @@ impl EngineComm {
         result
     }
 
-    pub fn best_move(&mut self, eval: &mut i32, is_mate: &mut bool) -> Option<String> {
+    pub fn best_move(&mut self) -> Option<String> {
         let mut buf = String::new();
         if let Some(ind) = self.read_until_rmatch("bestmove", &mut buf) {
             // TODO: try to parse the last evaluation from the output produced by the engine

@@ -1,4 +1,5 @@
 mod comm;
+mod game;
 mod gui;
 mod pgn;
 mod utils;

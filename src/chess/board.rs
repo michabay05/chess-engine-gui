@@ -117,6 +117,10 @@ impl Board {
         None
     }
 
+    pub fn is_white_to_move(&self) -> bool {
+        self.state.side == PieceColor::Light
+    }
+
     pub fn display(&self) {
         println!("\n    +---+---+---+---+---+---+---+---+");
         for r in 0..8 {

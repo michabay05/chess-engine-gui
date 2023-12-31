@@ -6,7 +6,7 @@ use chess::consts::{Piece, PieceColor, Sq};
 use chess::fen;
 use chess::COL;
 
-use crate::gui::{BoardInfo, GameState};
+use crate::game::{Game, GameState};
 
 use std::path::Path;
 use std::io::{self, BufWriter, Write};
@@ -107,6 +107,57 @@ fn coord_move_to_san(
 }
 
 pub fn save(
+    filename: &str, game: &Game, attack_info: &AttackInfo
+) -> Result<bool, io::Error> {
+    let f = std::fs::File::create(Path::new(filename))?;
+    let mut f = BufWriter::new(f);
+    writeln!(f, "[Event \"?\"]")?;
+    writeln!(f, "[Site \"?\"]")?;
+    writeln!(f, "[Date \"????.??.??\"]")?;
+    writeln!(f, "[Round \"?\"]")?;
+    writeln!(f, "[White \"{}\"]", game.white_name())?;
+    writeln!(f, "[Black \"{}\"]", game.black_name())?;
+    let result_str = match game.state() {
+        GameState::Ongoing => "*",
+        GameState::LightWinByCheckmate => "1-0",
+        GameState::DarkWinByCheckmate => "0-1",
+        _ => "1/2-1/2"
+    };
+    writeln!(f, "[Result \"{}\"]", result_str)?;
+    let start_fen = game.start_fen();
+    if start_fen != fen::FEN_POSITIONS[1] {
+        writeln!(f, "[FEN \"{}\"]", start_fen)?;
+        writeln!(f, "[SetUp \"1\"]")?;
+    }
+    writeln!(f)?;
+
+    for i in 0..game.move_count() {
+        if i % 2 == 0 {
+            write!(f, "{}. ", (i / 2) + 1)?;
+        }
+        if let Some(mv) = game.move_at(i) {
+            // write!(f, "{}", mv.to_str().trim())?;
+            let disambiguate = should_disambiguate(*mv, attack_info, game.board_before_move(i).unwrap());
+            // let ind = if i + 1 > board_info.len() - 1 { board_info.len() - 1 } else { i + 1 };
+            let next_board = game.board_after_move(i).unwrap();
+            let check = next_board.is_in_check(&attack_info, next_board.state.xside);
+            write!(f, "{}", coord_move_to_san(*mv, attack_info, check, disambiguate, false))?;
+        }
+        // Every 5 moves from each side, add a newline
+        if i < game.move_count() - 1 {
+            if i != 0 && i % 10 == 0 {
+                writeln!(f)?;
+            } else {
+                write!(f, " ")?;
+            }
+        }
+    }
+    writeln!(f, " {}", result_str)?;
+
+    Ok(true)
+}
+/*
+pub fn save(
     filename: &str, white_name: &str, black_name: &str, fen: &str,
     game_state: &GameState, attack_info: &AttackInfo, board_info: &Vec<BoardInfo>
 ) -> Result<bool, io::Error> {
@@ -156,6 +207,7 @@ pub fn save(
 
     Ok(true)
 }
+*/
 
 #[cfg(test)]
 mod tests {
