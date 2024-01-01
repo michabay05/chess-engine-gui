@@ -113,6 +113,12 @@ impl EngineComm {
         self.send(&format!("position fen {}", fen));
     }
 
+    pub fn stop(&mut self) {
+        self.searching = false;
+        self.search_time_left = None;
+        self.send("stop");
+    }
+
     pub fn name(&self) -> &String {
         &self.name
     }

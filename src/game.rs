@@ -8,6 +8,7 @@ use chess::move_gen::{self, MoveList};
 use chess::zobrist::ZobristInfo;
 use chess::{COL, ROW};
 
+use crate::pgn;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GameState {
@@ -60,8 +61,21 @@ impl Game {
         self.state == GameState::Ongoing
     }
 
+    pub fn is_white_to_move(&self) -> bool {
+        let b = self.boards.last().unwrap();
+        b.is_white_to_move()
+    }
+
     pub fn white_name(&self) -> &String {
         &self.white_name
+    }
+
+    pub fn lost_on_time(&mut self, is_white: bool) {
+        if is_white {
+            self.state = GameState::LightLostOnTime;
+        } else {
+            self.state = GameState::DarkLostOnTime;
+        }
     }
 
     pub fn black_name(&self) -> &String {
@@ -119,6 +133,20 @@ impl Game {
 
     pub fn board_after_last_move(&self) -> Option<&Board> {
         self.boards.last()
+    }
+
+    pub fn save(&self, filename: Option<String>, attack_info: &AttackInfo) -> bool {
+        let name;
+        if let None = filename {
+            name = format!("{}_vs_{}.pgn", self.white_name, self.black_name);
+        } else { 
+            name = filename.unwrap();
+        };
+        let is_saved = pgn::save(&name, &self, &attack_info).is_err();
+        if !is_saved {
+            eprintln!("[ERROR] Couldn't save game to file '{}'", name);
+        }
+        is_saved
     }
 
     // The returned boolean value tells whether or not the inputted move has been made successfully
