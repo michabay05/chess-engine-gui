@@ -52,11 +52,19 @@ impl GameManager {
             &mut self.time_left[SECOND]
         };
         *tl -= frame_time * 1000.0;
-        if let Some(inc) = self.increment {
-            *tl += (inc*1000) as f32;
-        }
         if *tl <= 0.0 {
             *tl = 0.0;
+        }
+    }
+
+    fn add_increment_to_time(&mut self) {
+        if let Some(inc) = self.increment {
+            let tl = if self.game.is_white_to_move() {
+                &mut self.time_left[FIRST]
+            } else {
+                &mut self.time_left[SECOND]
+            };
+            *tl += inc as f32;
         }
     }
 
@@ -108,7 +116,7 @@ impl GameManager {
         self.playing
     }
 
-    fn side(&self) -> usize {
+    pub fn side(&self) -> usize {
         if self.game.is_white_to_move() { self.white_engine } else { self.white_engine ^ 1 }
     }
 
@@ -148,6 +156,7 @@ impl GameManager {
             }
             if let Some(mv) = found_move {
                 if self.game.make_move(mv, &attack_info, &zobrist_info) {
+                    self.add_increment_to_time();
                     return Some(mv);
                 }
             }

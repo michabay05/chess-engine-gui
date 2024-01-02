@@ -198,7 +198,7 @@ fn draw_markers(d: &mut RaylibDrawHandle, board: &Board, tex: &Texture2D, sec: &
     );
 }
 
-fn draw_players_name(d: &mut RaylibDrawHandle, font: &Font, sec: &Rectangle, light_name: &str, dark_name: &str) {
+/* fn old_draw_players_name(d: &mut RaylibDrawHandle, font: &Font, sec: &Rectangle, light_name: &str, dark_name: &str) {
     let margin = Vector2::new(sec.width * 0.01, sec.height * 0.03);
 
     let text = &format!("{}   vs    {}", light_name, dark_name);
@@ -219,6 +219,54 @@ fn draw_players_name(d: &mut RaylibDrawHandle, font: &Font, sec: &Rectangle, lig
         bkgd_rect.y + bkgd_rect.height/2.0 - text_dim.y/2.0,
     );
     d.draw_text_ex(&font, text, text_pos, font.baseSize as f32, 0.0, Color::RAYWHITE);
+} */
+
+fn format_time(time: f32) -> String {
+    let seconds = time / 1000.0;
+    let (min, spare_seconds) = ((seconds/60.0).trunc(), seconds % 60.0);
+    // If the time left is less than 20 seconds, display the tenths decimal place
+    if time > 20.0 * 1000.0 {
+        format!("{}:{:02}", min, spare_seconds.trunc())
+    } else if time == 0.0 {
+        format!("0:00")
+    } else {
+        // Padding(prepending) zeros and rounding f32 with decimals
+        // Source: https://stackoverflow.com/questions/49778643/how-to-format-an-f32-with-a-specific-precision-and-prepended-zeros
+        format!("0:{:04.1}", spare_seconds)
+    }
+}
+
+fn draw_players_name(d: &mut RaylibDrawHandle, font: &Font, sec: &Rectangle, name: &str, time_left: f32, active: bool) {
+    // Name
+    let text_dim = text::measure_text_ex(font, name, font.baseSize as f32, 0.0);
+    let text_pos = Vector2::new(
+        sec.x + 0.1*sec.width - text_dim.x/2.0,
+        sec.y + sec.height/2.0 - text_dim.y/2.0,
+    );
+    d.draw_text_ex(&font, name, text_pos, font.baseSize as f32, 0.0, Color::RAYWHITE);
+
+    // Timer
+    let (bg, fg) = if active {
+        (Color::RAYWHITE, BACKGROUND)
+    } else {
+        (Color::DARKGRAY, Color::GRAY)
+    };
+    let (bg_width, bg_height) = (f32::max(1.25 * text_dim.x, 120.0), 1.25 * text_dim.y);
+    let bg_rect = Rectangle {
+        x: sec.x + sec.width - 1.2*bg_width,
+        y: sec.y + sec.height/2.0 - bg_height/2.0,
+        width: bg_width,
+        height: bg_height,
+    };
+    let time_str = &format_time(time_left);
+    let text_dim = text::measure_text_ex(font, time_str, font.baseSize as f32, 0.0);
+    let text_pos = Vector2::new(
+        bg_rect.x + bg_width / 2.0 - text_dim.x/2.0,
+        bg_rect.y + bg_height / 2.0 - text_dim.y/2.0,
+    );
+    // d.draw_rectangle_rec(bg_rect, bg);
+    d.draw_rectangle_rounded(bg_rect, 0.2, 6, bg);
+    d.draw_text_ex(&font, &time_str, text_pos, font.baseSize as f32, 0.0, fg);
 }
 
 fn draw_moves(s: &mut impl RaylibDraw, sec: &mut Rectangle, font: &Font, game: &Game, current: usize) -> Rectangle {
@@ -393,12 +441,15 @@ struct GUI {
 
     // Sections on the screen
     board_sec: Rectangle,
+    white_name_sec: Rectangle,
+    black_name_sec: Rectangle,
     promotion_sec: Rectangle,
     info_sec: Rectangle,
 
     move_list_sec: Rectangle,
     move_list_rect: Rectangle,
     curr_move_rect: Rectangle,
+    move_btns_rect: Rectangle,
     follow_move_list: bool,
 }
 
@@ -412,12 +463,15 @@ impl GUI {
 
             // Sections on the screen
             board_sec: Rectangle::default(),
+            white_name_sec: Rectangle::default(),
+            black_name_sec: Rectangle::default(),
             promotion_sec: Rectangle::default(),
             info_sec: Rectangle::default(),
 
             move_list_sec: Rectangle::default(),
             move_list_rect: Rectangle::default(),
             curr_move_rect: Rectangle::default(),
+            move_btns_rect: Rectangle::default(),
             follow_move_list: true,
         }
     }
@@ -430,12 +484,25 @@ impl GUI {
     }
 
     fn update_sections(&mut self, size: Vector2, margin: Vector2) {
-        let min_side = f32::min((size.x - 2.0*margin.x) * 0.7, size.y - 2.0*margin.y);
+        let min_side = f32::min((size.x - 2.0*margin.x) * 0.7, 0.85 * (size.y - 2.0*margin.y));
         self.board_sec = Rectangle {
             x: margin.x,
-            y: margin.y,
+            y: margin.y + (size.y - 2.0*margin.y)/2.0  - min_side/2.0,
             width: min_side,
             height: min_side
+        };
+        let name_height = self.board_sec.y - margin.y;
+        self.white_name_sec = Rectangle {
+            x: self.board_sec.x,
+            y: self.board_sec.y + self.board_sec.height + self.board_sec.y/2.0 - name_height/2.0,
+            width: min_side,
+            height: name_height,
+        };
+        self.black_name_sec = Rectangle {
+            x: self.board_sec.x,
+            y: self.board_sec.y/2.0 - name_height/2.0,
+            width: min_side,
+            height: name_height,
         };
         let promoted_height = self.board_sec.height * 0.15;
         let promoted_width = 4.0 * promoted_height;
@@ -448,12 +515,25 @@ impl GUI {
 
         self.info_sec = Rectangle {
             x: self.board_sec.x + self.board_sec.width + margin.x,
-            y: self.board_sec.y,
+            y: margin.y,
             width: size.x - (self.board_sec.x + self.board_sec.width + 2.0*margin.x),
-            height: min_side,
+            height: size.y - 2.0*margin.y,
         };
-        let height = 0.5*self.info_sec.height;
         self.move_list_sec = Rectangle {
+            height: 0.5*self.info_sec.height,
+            ..self.info_sec
+        };
+        self.move_list_rect = Rectangle {
+            y: self.move_list_rect.y,
+            height: self.move_list_rect.height,
+            ..self.move_list_sec
+        };
+        self.move_btns_rect = Rectangle {
+            y: self.move_list_sec.y + self.move_list_sec.height + margin.y,
+            height: self.info_sec.height - self.move_list_sec.height,
+            ..self.move_list_sec
+        };
+        /* self.move_list_sec = Rectangle {
             x: self.info_sec.x,
             y: self.info_sec.y + height,
             width: self.info_sec.width,
@@ -463,7 +543,7 @@ impl GUI {
             y: self.move_list_rect.y,
             height: self.move_list_rect.height,
             ..self.move_list_sec
-        };
+        }; */
     }
 
     fn handle_scrolling(&mut self, rl: &RaylibHandle) {
@@ -508,6 +588,8 @@ enum MoveButtonType {
     Next,
     Last
 }
+
+const AUTHOR_TEXT: &str = "Developed by Michael T. Abayneh, 2024 (MIT License)";
 
 pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<(), String> {
     let attack_info = AttackInfo::new();
@@ -561,18 +643,13 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
     let font = rl.load_font(&thread, "assets/fonts/Inter-Regular.ttf")?;
     let move_list_font = rl.load_font_ex(&thread, "assets/fonts/Inter-Medium.ttf", (rl.get_screen_width() as f32 * 0.02) as i32, FontLoadEx::Default(0))?;
     let bold_font = rl.load_font(&thread, "assets/fonts/Inter-Bold.ttf")?;
+    // TODO: figure out how to load the 'author_font' without losing the visual quality of the
+    // text, i.e. get blurry. The issue seems to be with font sizes less than or equal to 20 and
+    // the author text should be smaller than that so...
+    let author_font = rl.load_font_ex(&thread, "assets/fonts/Inter-Regular.ttf", 20, FontLoadEx::Default(0))?;
 
     let mut gui = GUI::new();
     gui.init_sections(rl.get_screen_width(), rl.get_screen_height());
-
-    // let mut game = Game::new(engine_a.name(), engine_b.name(), &zobrist_info);
-    // Start a new game
-    // game.set_start_pos(fen::FEN_POSITIONS[1], &zobrist_info);
-
-    // Engine handle
-    // let mut play_game = false;
-    let mut is_engine_a = true;
-    let mut engine_move_str: Option<String> = None;
 
     // Move Animations
     let mut anim_start_time = Instant::now();
@@ -597,28 +674,27 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         gui.handle_scrolling(&rl);
 
         // Move buttons
-        let sec = gui.info_sec;
-        let sec_margin = sec.width * 0.05;
-        let width = (sec.width - 2.0*sec_margin) / 6.5;
-        let height = f32::min(45.0, sec.height * 0.1);
-        let y = gui.move_list_sec.y - margin.x - height;
-        let mut move_btns = [
-            Button::padded_content(MoveButtonType::First, Rectangle {
-                x: sec.x + sec_margin, y, width, height
-            }, MOVE_BTN_COLOR),
-            Button::padded_content(MoveButtonType::Previous, Rectangle {
-                x: sec.x + sec_margin + sec_margin + width, y, width, height
-            }, MOVE_BTN_COLOR),
-            Button::padded_content(MoveButtonType::PlayPause, Rectangle {
-                x: sec.x + sec_margin + 2.0*(sec_margin + width), y, width, height
-            }, MOVE_BTN_COLOR),
-            Button::padded_content(MoveButtonType::Next, Rectangle {
-                x: sec.x + sec_margin + 3.0*(sec_margin + width), y, width, height
-            }, MOVE_BTN_COLOR),
-            Button::padded_content(MoveButtonType::Last, Rectangle {
-                x: sec.x + sec_margin + 4.0*(sec_margin + width), y, width, height
-            }, MOVE_BTN_COLOR),
-        ];
+        let mut move_btns = {
+            let sec = gui.move_btns_rect;
+            let sec_margin = margin.x;
+            let width = (sec.width - 7.0*margin.x) / 6.0;
+            let height = f32::min(45.0, sec.height * 0.1);
+            let y = gui.move_btns_rect.y;
+
+            let first = Rectangle { x: sec.x + sec_margin, y, width, height };
+            let prev = Rectangle { x: first.x + width + sec_margin, y, width, height };
+            let play = Rectangle { x:  prev.x + width + sec_margin, y, width, height };
+            let next = Rectangle { x:  play.x + width + sec_margin, y, width, height };
+            let last = Rectangle { x:  next.x + width + sec_margin, y, width, height };
+
+            [
+                Button::padded_content(MoveButtonType::First, first, MOVE_BTN_COLOR),
+                Button::padded_content(MoveButtonType::Previous, prev, MOVE_BTN_COLOR),
+                Button::padded_content(MoveButtonType::PlayPause, play, MOVE_BTN_COLOR),
+                Button::padded_content(MoveButtonType::Next, next, MOVE_BTN_COLOR),
+                Button::padded_content(MoveButtonType::Last, last, MOVE_BTN_COLOR),
+            ]
+        };
 
         for btn in &move_btns {
             if btn.is_clicked(&rl) {
@@ -673,28 +749,10 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         } else if rl.is_key_pressed(KeyboardKey::KEY_N) {
             manager.start_new_game(&fens, &zobrist_info);
             move_index = 0;
-            // let game = manager.current_game();
-            // anim_board = game.board_after_move(move_index).cloned().unwrap();
         }
 
         manager.check_state();
         manager.update_time_left(rl.get_frame_time());
-        /*
-        if game.is_ongoing() && play_game {
-            let engine = if is_engine_a { &mut engine_a } else { &mut engine_b };
-            if !engine.is_searching() {
-                engine.fen(&game.current_fen());
-                engine.search_movetime((SECONDS_PER_MOVE * 1000.0) as u64);
-                is_engine_a = !is_engine_a;
-            } else if !engine.search_time_over() {
-                engine.update_time_left(rl.get_frame_time());
-            } else {
-                engine_move_str = get_move_from_engine(rl.get_frame_time(), &game.current_fen(), engine);
-            }
-        }
-        */
-        // engine_move_str = manager.comm_with_engine(rl.get_frame_time());
-
         if let Some(mv) = manager.play(rl.get_frame_time(), &attack_info, &zobrist_info) {
             move_index += 1;
 
@@ -704,52 +762,6 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
             let game = manager.current_game();
             anim_target_board = game.board_after_last_move().cloned();
         }
-
-        /*
-        if let Some(ref mv_str) = engine_move_str.take() {
-            let mut found_move = None;
-            if let Some(board) = game.board_after_last_move() {
-                let source = mv_str.get(0..2);
-                let target = mv_str.get(2..4);
-                let promoted = if let Some(ch) = mv_str.chars().nth(4) {
-                    let piece_char = if board.is_white_to_move() {
-                        ch.to_ascii_uppercase()
-                    } else { ch };
-                    Piece::from_char(piece_char)
-                } else { None };
-
-                let piece = if let Some(sq_str) = source {
-                    board.find_piece(Sq::from_str(sq_str) as usize)
-                } else { None };
-
-                if let Some(p) = piece {
-                    let mut ml = MoveList::new();
-                    move_gen::generate_by_piece(board, &attack_info, &mut ml, p);
-                    if source.is_some() && target.is_some() {
-                        found_move = ml.search(
-                            Sq::from_str(source.unwrap()),
-                            Sq::from_str(target.unwrap()),
-                            promoted
-                        );
-                    }
-                }
-            }
-            if let Some(mv) = found_move {
-                let _ = game.make_move(mv, &attack_info, &zobrist_info);
-                move_index += 1;
-
-                is_animating = true;
-                anim_start_time = Instant::now();
-                anim_mv = Some(mv);
-                anim_target_board = game.board_after_last_move().cloned();
-                // anim_target_board = game.board_after_move(move_index).cloned();
-            } else {
-                // eprintln!("[ERROR] Couldn't find engine's move in the current position");
-                // eprintln!(" - Move: {mv_str}");
-                // eprintln!(" -  FEN: {}", game.current_fen());
-            }
-        }
-        */
 
         /* ==================== RENDER PHASE ==================== */
         fn draw_pieces(d: &mut RaylibDrawHandle, skip_sq: Option<Sq>, tex: &Texture2D, board: &Board, sec: &Rectangle) {
@@ -797,6 +809,11 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
             target = Some(mv.target());
         };
         draw_board(&mut d, &gui.board_sec, source, target);
+
+        d.draw_rectangle_lines_ex(gui.board_sec, 2, Color::RED);
+        d.draw_rectangle_lines_ex(gui.white_name_sec, 2, Color::GREEN);
+        d.draw_rectangle_lines_ex(gui.black_name_sec, 2, Color::GREEN);
+
         draw_coords(&mut d, &bold_font, &gui.board_sec);
         let skip_sq = if is_animating { source } else { None };
         draw_pieces(&mut d, skip_sq, &piece_tex, &anim_board, &gui.board_sec);
@@ -823,8 +840,6 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         if !game.is_ongoing() && move_index == manager.current_move_count() {
             draw_markers(&mut d, &anim_board, &game_end_tex, &gui.board_sec, game.state());
         }
-        draw_players_name(&mut d, &font, &gui.info_sec, game.white_name(), game.black_name());
-
         for btn in &move_btns {
             btn.draw(&mut d, mouse_pos);
             let min_side = f32::min(btn.content_rect().width, btn.content_rect().height);
@@ -849,22 +864,31 @@ pub fn gui_main(engine_a_path: String, engine_b_path: Option<String>) -> Result<
         }
 
         let (white_time, black_time) = manager.time_left();
+        // '0' represents white, while '1' represents black
+        let is_white_to_move = manager.side() == 0;
+        draw_players_name(&mut d, &font, &gui.white_name_sec, game.white_name(), white_time, is_white_to_move);
+        draw_players_name(&mut d, &font, &gui.black_name_sec, game.black_name(), black_time, !is_white_to_move);
 
-        fn format_time(time: f32) -> String {
-            let seconds = time / 1000.0;
-            let (min, spare_seconds) = ((seconds/60.0).trunc(), seconds % 60.0);
-            // If the time left is less than 20 seconds, display the tenths decimal place
-            if time > 20.0 * 1000.0 {
-                format!("{}:{:02}", min, spare_seconds.trunc())
-            } else {
-                // Padding(prepending) zeros and rounding f32 with decimals
-                // Source: https://stackoverflow.com/questions/49778643/how-to-format-an-f32-with-a-specific-precision-and-prepended-zeros
-                format!("0:{:04.1}", spare_seconds)
-            }
+        {
+            let height = 0.1*gui.info_sec.height;
+            let author_rect = Rectangle {
+                x: gui.info_sec.x,
+                y: gui.info_sec.y + gui.info_sec.height - height,
+                width: gui.info_sec.width,
+                height,
+            };
+            d.draw_rectangle_lines_ex(gui.info_sec, 3, Color::GOLD);
+            d.draw_rectangle_lines_ex(author_rect, 3, Color::DARKBLUE);
+            let text_dim = text::measure_text_ex(&author_font, AUTHOR_TEXT, font.baseSize as f32, 0.0);
+            d.draw_text_ex(
+                &author_font, AUTHOR_TEXT,
+                Vector2::new(
+                    author_rect.x + author_rect.width/2.0 - text_dim.x/2.0,
+                    author_rect.y + author_rect.height/2.0 - text_dim.y/2.0,
+                ),
+                font.baseSize as f32, 0.0, Color::RAYWHITE
+            );
         }
-        let (white_time_str, black_time_str) = (format_time(white_time), format_time(black_time));
-        d.draw_text_ex(&font, &white_time_str, Vector2::new(1400.0, 300.0), font.baseSize as f32, 0.0, Color::WHITE);
-        d.draw_text_ex(&font, &black_time_str, Vector2::new(1600.0, 300.0), font.baseSize as f32, 0.0, Color::WHITE);
 
         let mut s = d.begin_scissor_mode(
             gui.move_list_sec.x as i32,
